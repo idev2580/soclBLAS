@@ -3,7 +3,7 @@ file(GLOB GEN_SHADERS "${CMAKE_SOURCE_DIR}/shaders/generated/*.comp")
 # Add manually coded shader files
 set(
     MANUAL_SHADERS
-    "${CMAKE_SOURCE_DIR}/shaders/OpAxpyFP32.comp"
+    "${CMAKE_SOURCE_DIR}/shaders/AxpyFP32.comp"
 )
 set(
     ALL_SHADER_SOURCES
@@ -11,7 +11,7 @@ set(
     ${MANUAL_SHADERS}
 )
 
-set(SHADER_HEADERS "" PARENT_SCOPE)
+set(SHADER_HEADERS "" )
 
 # Compile shader codes at build time
 foreach(SHADER_PATH IN LISTS ALL_SHADER_SOURCES)
@@ -19,7 +19,7 @@ foreach(SHADER_PATH IN LISTS ALL_SHADER_SOURCES)
 
   string(REPLACE ".comp" "_SPIRV" VAR_NAME ${FILE_NAME})
 
-  set(SHADER_HEADER "${CMAKE_CURRENT_BINARY_DIR}/shaders/${VAR_NAME}")
+  set(SHADER_HEADER "${CMAKE_BINARY_DIR}/shaders/${VAR_NAME}")
 
   add_custom_command(
     OUTPUT ${SHADER_HEADER}
@@ -29,3 +29,6 @@ foreach(SHADER_PATH IN LISTS ALL_SHADER_SOURCES)
   )
   list(APPEND SHADER_HEADERS ${SHADER_HEADER})
 endforeach()
+
+add_custom_target(compile_shaders ALL DEPENDS ${SHADER_HEADERS})
+set(SHADER_HEADERS ${SHADER_HEADERS} PARENT_SCOPE)

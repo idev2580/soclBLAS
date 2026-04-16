@@ -1,9 +1,6 @@
-# Include
-include_directories("${CMAKE_SOURCE_DIR}/include" "${CMAKE_BINARY_DIR}/shaders")
-
 # Scan CPP files
-file(GLOB SOURCES "src/*.cpp" "src/ops/*.cpp")
-add_library(kpblas SHARED ${SOURCES})
+file(GLOB SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp" "${CMAKE_SOURCE_DIR}/src/ops/*.cpp")
 
-# Link libraries
-target_link_libraries(kpblas PUBLIC kompute)
+# Export to parent
+set(SOURCES ${SOURCES} PARENT_SCOPE)
+

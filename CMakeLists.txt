@@ -7,13 +7,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 include(FetchContent)
 
+add_definitions(-DKOMPUTE_DISABLE_VK_DEBUG_LAYERS=1) #Due to buggy Kompute implementation(Compile not done!)
+find_package(kompute REQUIRED)
+
 add_subdirectory(shaders)
 add_subdirectory(src)
 # add_subdirectory(tests)
 
-# Copy-paste compile_commands.json automatically after build
-add_custom_command(TARGET kpblas POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_BINARY_DIR}/compile_commands.json
-        ${CMAKE_SOURCE_DIR}/compile_commands.json
-)
+include_directories("${CMAKE_SOURCE_DIR}/include" "${CMAKE_BINARY_DIR}/shaders")
+add_library(kpblas SHARED ${SOURCES})
+target_link_libraries(kpblas PUBLIC kompute)
