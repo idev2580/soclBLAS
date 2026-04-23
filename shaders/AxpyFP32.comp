@@ -9,9 +9,8 @@ layout(set=0, binding=0) readonly restrict buffer tensor_a{float a[];};
 layout(set=0, binding=1) buffer restrict tensor_b{float b[];};
 
 void main(){
-    const uint total_threads = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
     const uint vidx = gl_GlobalInvocationID.x;
-    for(uint i=vidx; i < vector_size; i+= total_threads){
+    if(vidx < vector_size){
         b[vidx] = fma(alpha, a[vidx], b[vidx]);
     }
 }

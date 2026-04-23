@@ -1,0 +1,53 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_shuffle : require
+#extension GL_KHR_shader_subgroup_ballot: enable
+#extension GL_KHR_shader_subgroup_arithmetic: enable
+
+layout(local_size_x = 64) in;
+
+layout(constant_id=0) const uint batch = 0;
+layout(constant_id=1) const uint m = 0;
+layout(constant_id=2) const uint n = 0;
+layout(constant_id=3) const float alpha = 0.0;
+layout(constant_id=4) const float beta = 0.0;
+const uint matrix_size = m * n;
+
+// y := alpha * a * x + beta * y
+layout(set=0, binding=0) readonly restrict buffer tensor_a{float a[];};
+layout(set=0, binding=1) readonly restrict buffer tensor_x{float x[];};
+layout(set=0, binding=2) restrict buffer tensor_y{float y[];};
+
+uint get_matrix_idx(uint row_idx, uint col_idx){
+    return row_idx * n + col_idx;
+}
+uint get_x_idx(uint batch_idx, uint col_idx){
+    return batch_idx * n + col_idx;
+}
+uint get_y_idx(uint batch_idx, uint row_idx){
+    return batch_idx * m + row_idx;
+}
+
+void main(){
+    uint target_batch_idx = gl_WorkGroupID.x;
+    uint target_vector_idx = gl_WorkGroupID.y;
+    uint block_cnt = batch >> 6;
+    
+    float acc = 0.0f;
+    for(int i=0; i < block_cnt + 1; i++){
+        uint col_idx = 64 * i + gl_LocalInvocationIndex;
+        if(col_idx < n){
+            const float a_val = a[get_matrix_idx(target_vector_idx, col_idx)];
+            const float x_val = x[get_x_idx(target_batch_idx, col_idx)];
+            acc += a_val * x_val;
+        }
+    }
+    // Sum 64 thread's independent accumulated value.
+    const float dotprod = subgroupAdd(acc);
+    
+    const uint y_idx = get_y_idx(target_batch_idx, target_vector_idx);
+    const float ny = fma(alpha, dotprod, beta * y[y_idx]);
+    // Write-back!
+    y[y_idx] = ny;
+}

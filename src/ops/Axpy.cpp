@@ -1,10 +1,10 @@
+#include "kompute/Core.hpp"
 #include <ops/Axpy.hpp>
 
 namespace kpblas{
     AxpyFP32::AxpyFP32(
         std::vector<std::shared_ptr<kp::Tensor>> tensors, 
         std::shared_ptr<kp::Algorithm> algorithm,
-        const kp::Workgroup& wgrp,
         uint32_t vector_size,
         float alpha
     ):kp::OpAlgoDispatch(algorithm){
@@ -15,11 +15,12 @@ namespace kpblas{
         memcpy(target, &vector_size, 4);
         memcpy(target+4, &alpha, 4);
         
+        uint32_t wgrp_size = (vector_size >> 6) + (vector_size % 64 != 0 ? 1 : 0);
         algorithm->rebuild(tensors, std::vector<uint32_t>(
             std::begin(AxpyFP32_SPIRV), 
             std::end(AxpyFP32_SPIRV)
             ), 
-            wgrp,
+            kp::Workgroup({wgrp_size}),
             specConstant
         );
     }

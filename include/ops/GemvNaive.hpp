@@ -2,15 +2,19 @@
 #include <kompute/operations/OpAlgoDispatch.hpp>
 #include <kompute/Kompute.hpp>
 
-#include <AxpyFP32_SPIRV>
+#include <GemvNaiveFP32_SPIRV>
+
 namespace kpblas{
-    class AxpyFP32: public kp::OpAlgoDispatch{
+    class GemvNaiveFP32: public kp::OpAlgoDispatch{
         public:
-        AxpyFP32(
+        GemvNaiveFP32(
             std::vector<std::shared_ptr<kp::Tensor>> tensors, 
             std::shared_ptr<kp::Algorithm> algorithm,
-            uint32_t vector_size,
-            float alpha
+            uint32_t b,
+            uint32_t m,
+            uint32_t n,
+            float alpha,
+            float beta
         );
     };
 }

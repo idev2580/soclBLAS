@@ -7,13 +7,32 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 include(FetchContent)
 
-add_definitions(-DKOMPUTE_DISABLE_VK_DEBUG_LAYERS=1) #Due to buggy Kompute implementation(Compile not done!)
-find_package(kompute REQUIRED)
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG        v1.14.0
+)
+FetchContent_MakeAvailable(googletest)
+FetchContent_Declare(
+  kompute
+  GIT_REPOSITORY https://github.com/KomputeProject/kompute.git
+  GIT_TAG        v0.9.0
+)
+set(KOMPUTE_OPT_LOG_LEVEL "Error" CACHE STRING "" FORCE)
+FetchContent_MakeAvailable(kompute)
+find_package(fmt REQUIRED)
 
 add_subdirectory(shaders)
 add_subdirectory(src)
-# add_subdirectory(tests)
+add_subdirectory(tests)
 
 include_directories("${CMAKE_SOURCE_DIR}/include" "${CMAKE_BINARY_DIR}/shaders")
 add_library(kpblas SHARED ${SOURCES})
-target_link_libraries(kpblas PUBLIC kompute)
+target_link_libraries(kpblas PUBLIC kompute fmt)
+
+if(TEST_SOURCES)
+    add_executable(kpblas_tests ${TEST_SOURCES})
+    target_link_libraries(kpblas_tests PRIVATE kpblas GTest::gtest_main)
+    include(GoogleTest)
+    gtest_discover_tests(kpblas_tests)
+endif()
