@@ -15,6 +15,12 @@ layout(constant_id=2) const uint n = 0;
 layout(constant_id=3) const uint p = 0;
 layout(constant_id=4) const float alpha = 0.0;
 layout(constant_id=5) const float beta = 0.0;
+layout(constant_id=6) const uint flags = 0x0;
+
+const bool is_a_transposed = bool(flags & 0x1);
+const bool is_b_transposed = bool(flags & 0x2);
+const bool is_c_transposed = bool(flags & 0x4);
+
 const uint a_size = m * n;
 const uint b_size = n * p;
 const uint c_size = m * p;
@@ -31,14 +37,32 @@ layout(set=0, binding=0) readonly restrict buffer tensor_a{float a[];};
 layout(set=0, binding=1) readonly restrict buffer tensor_b{float b[];};
 layout(set=0, binding=2) restrict buffer tensor_c{float c[];};
 
-uint get_a_idx(uint batch, uint r, uint c){
-    return (batch * a_size) + (r * n) + c;
+uint get_a_idx(uint batch, uint r, uint c, bool is_transposed){
+    if(is_transposed){
+        //Transposed(Column-major)
+        return (batch * a_size) + (c * m) + r;
+    } else{
+        //Not transposed(Row-major)
+        return (batch * a_size) + (r * n) + c;
+    }
 }
-uint get_b_idx(uint batch, uint r, uint c){
-    return (batch * b_size) + (r * p) + c;
+uint get_b_idx(uint batch, uint r, uint c, bool is_transposed){
+    if(is_transposed){
+        //Transposed(Column-major)
+        return (batch * b_size) + (c * n) + r;
+    } else {
+        //Not transposed(Row-major)
+        return (batch * b_size) + (r * p) + c;
+    }
 }
-uint get_c_idx(uint batch, uint r, uint c){
-    return (batch * c_size) + (r * p) + c;
+uint get_c_idx(uint batch, uint r, uint c, bool is_transposed){
+    if(is_transposed){
+        //Transposed(Column-major)
+        return (batch * c_size) + (c * m) + r;
+    } else {
+        //Not transposed(Row-major)
+        return (batch * c_size) + (r * p) + c;
+    }
 }
 
 void main(){
@@ -58,11 +82,11 @@ void main(){
         const uint b_r = i * TILE_SIZE + gl_LocalInvocationID.x;
         const uint b_c = tileCid * TILE_SIZE + gl_LocalInvocationID.y;
         if(a_r < m && a_c < n){
-            a_val = a[get_a_idx(batchId, a_r, a_c)];
+            a_val = a[get_a_idx(batchId, a_r, a_c, is_a_transposed)];
         }
         // Load B tile (B reads through rows)
         if(b_r < n && b_c < p){
-            b_val = b[get_b_idx(batchId, b_r, b_c)];
+            b_val = b[get_b_idx(batchId, b_r, b_c, is_b_transposed)];
         }
 
         // Calculate dot product for its local value.
@@ -82,7 +106,7 @@ void main(){
     // Add C and save it to C
     uint c_r = tileRid * TILE_SIZE + gl_LocalInvocationID.x;
     uint c_c = tileCid * TILE_SIZE + gl_LocalInvocationID.y;
-    uint c_idx = get_c_idx(batchId, c_r, c_c);
+    uint c_idx = get_c_idx(batchId, c_r, c_c, is_c_transposed);
     if(c_r < m && c_c < p){
         const float v = fma(alpha, local_acc, beta * c[c_idx]);
         c[c_idx] = v;

@@ -15,7 +15,10 @@ namespace kpblas{
             uint32_t n,
             uint32_t p,
             float alpha,
-            float beta
+            float beta,
+            bool a_transposed = false,
+            bool b_transposed = false,
+            bool c_transposed = false
         );
     };
 }

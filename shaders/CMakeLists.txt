@@ -4,7 +4,7 @@ file(GLOB GEN_SHADERS "${CMAKE_SOURCE_DIR}/shaders/generated/*.comp")
 set(
     MANUAL_SHADERS
     "${CMAKE_SOURCE_DIR}/shaders/AxpyFP32.comp"
-    "${CMAKE_SOURCE_DIR}/shaders/GemvNaiveFP32.comp"
+    # "${CMAKE_SOURCE_DIR}/shaders/GemvNaiveFP32.comp"
     "${CMAKE_SOURCE_DIR}/shaders/GemmNaiveFP32.comp"
 )
 set(
