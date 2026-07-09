@@ -5,86 +5,112 @@
 #extension GL_KHR_shader_subgroup_ballot: enable
 #extension GL_KHR_shader_subgroup_arithmetic: enable
 
-#define TILE_SIZE 4
+#define TILE_M 8
+#define TILE_N 4
+#define TILE_K 4
+// TILE_K <= TILE_N
+// TILE_M * TILE_N == 32 assumed.
+layout(local_size_x = TILE_M, local_size_y = TILE_N, local_size_z = 1) in;
 
-layout(local_size_x = TILE_SIZE, local_size_y = TILE_SIZE) in;
+layout(constant_id = 0) const uint batch = 0;
+layout(constant_id = 1) const uint m = 0; // A rows, C rows
+layout(constant_id = 2) const uint n = 0; // A cols, B rows, K
+layout(constant_id = 3) const uint p = 0; // B cols, C cols
+layout(constant_id = 4) const float alpha = 0.0;
+layout(constant_id = 5) const float beta = 0.0;
 
-layout(constant_id=0) const uint batch = 0;
-layout(constant_id=1) const uint m = 0;
-layout(constant_id=2) const uint n = 0;
-layout(constant_id=3) const uint p = 0;
-layout(constant_id=4) const float alpha = 0.0;
-layout(constant_id=5) const float beta = 0.0;
 const uint a_size = m * n;
 const uint b_size = n * p;
 const uint c_size = m * p;
 
-const uint tiled_a_rowcnt = (m / TILE_SIZE) + (m % TILE_SIZE == 0 ? 0 : 1);
-const uint tiled_a_colcnt = (n / TILE_SIZE) + (n % TILE_SIZE == 0 ? 0 : 1);
-
-// Note that If tile was R*C in A, then C*R in B.
-const uint tiled_b_rowcnt = (n / TILE_SIZE) + (n % TILE_SIZE == 0 ? 0 : 1); // == tiled_a_colcnt
-const uint tiled_b_colcnt = (p / TILE_SIZE) + (p % TILE_SIZE == 0 ? 0 : 1);
+const uint tiled_m_cnt = (m / TILE_M) + (m % TILE_M == 0 ? 0 : 1);
+const uint tiled_k_cnt = (n / TILE_K) + (n % TILE_K == 0 ? 0 : 1);
+const uint tiled_n_cnt = (p / TILE_N) + (p % TILE_N == 0 ? 0 : 1);
 
 // c := alpha * A * B + beta * C
-layout(set=0, binding=0) readonly restrict buffer tensor_a{float a[];};
-layout(set=0, binding=1) readonly restrict buffer tensor_b{float b[];};
-layout(set=0, binding=2) restrict buffer tensor_c{float c[];};
+layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
+    float a[];
+};
 
-uint get_a_idx(uint batch, uint r, uint c){
-    return (batch * a_size) + (r * n) + c;
+layout(set = 0, binding = 1) readonly restrict buffer tensor_b {
+    float b[];
+};
+
+layout(set = 0, binding = 2) restrict buffer tensor_c {
+    float c[];
+};
+
+uint get_a_idx(uint batch_id, uint r, uint col) {
+    return (batch_id * a_size) + (r * n) + col;
 }
-uint get_b_idx(uint batch, uint r, uint c){
-    return (batch * b_size) + (r * p) + c;
-}
-uint get_c_idx(uint batch, uint r, uint c){
-    return (batch * c_size) + (r * p) + c;
+
+uint get_b_idx(uint batch_id, uint r, uint col) {
+    return (batch_id * b_size) + (r * p) + col;
 }
 
-void main(){
-    uint batchId = gl_WorkGroupID.x;
-    uint tileRid = gl_WorkGroupID.y;
-    uint tileCid = gl_WorkGroupID.z;
+uint get_c_idx(uint batch_id, uint r, uint col) {
+    return (batch_id * c_size) + (r * p) + col;
+}
 
-    float local_acc = 0.0f;
-    // Each workgroup is responsible for 8*8 tile.
-    for(int i=0; i<tiled_a_colcnt; i++){
-        // Load each tile.
-        float a_val = 0.0f;
-        float b_val = 0.0f;
-        // Load A tile (A reads through columns)
-        const uint a_r = tileRid * TILE_SIZE + gl_LocalInvocationID.x;
-        const uint a_c = i * TILE_SIZE + gl_LocalInvocationID.y;
-        const uint b_r = i * TILE_SIZE + gl_LocalInvocationID.x;
-        const uint b_c = tileCid * TILE_SIZE + gl_LocalInvocationID.y;
-        if(a_r < m && a_c < n){
-            a_val = a[get_a_idx(batchId, a_r, a_c)];
-        }
-        // Load B tile (B reads through rows)
-        if(b_r < n && b_c < p){
-            b_val = b[get_b_idx(batchId, b_r, b_c)];
+void main() {
+    const uint batch_id = gl_WorkGroupID.x;
+    const uint tile_m_id = gl_WorkGroupID.y;
+    const uint tile_n_id = gl_WorkGroupID.z;
+
+    const uint local_m = gl_LocalInvocationID.x; // 0 .. TILE_M - 1
+    const uint local_n = gl_LocalInvocationID.y; // 0 .. TILE_N - 1
+
+    const uint global_m = tile_m_id * TILE_M + local_m;
+    const uint global_n = tile_n_id * TILE_N + local_n;
+
+    float acc = 0.0;
+
+    for (uint tile_k_id = 0; tile_k_id < tiled_k_cnt; tile_k_id++) {
+        float a_val = 0.0;
+        float b_val = 0.0;
+
+        // A tile: TILE_M x TILE_K
+        //
+        // Lane (local_m, local_n) loads A[local_m, local_n]
+        // only when local_n < TILE_K.
+        const uint a_r = global_m;
+        const uint a_c = tile_k_id * TILE_K + local_n;
+
+        if (local_n < TILE_K && a_r < m && a_c < n) {
+            a_val = a[get_a_idx(batch_id, a_r, a_c)];
         }
 
-        // Calculate dot product for its local value.
-        float dot_prod = 0.0f;
-        for(int j = 0; j<TILE_SIZE; j++){
-            //Subgroup에서는 zyx 순...
-            uint da_idx = uint(j * TILE_SIZE + gl_LocalInvocationID.x);
-            uint db_idx = uint(gl_LocalInvocationID.y * TILE_SIZE + j);
+        // B tile: TILE_K x TILE_N
+        //
+        // Lane (local_m, local_n) loads B[local_m, local_n]
+        // only when local_m < TILE_K.
+        const uint b_r = tile_k_id * TILE_K + local_m;
+        const uint b_c = global_n;
 
-            float da = subgroupShuffle(a_val, da_idx);
-            float db = subgroupShuffle(b_val, db_idx);
-            dot_prod += da * db;
+        if (local_m < TILE_K && b_r < n && b_c < p) {
+            b_val = b[get_b_idx(batch_id, b_r, b_c)];
         }
-        // Save each element in 'local_acc'
-        local_acc += dot_prod;
+
+        // Dot product for C[global_m, global_n].
+        for (uint k = 0; k < TILE_K; k++) {
+            // Flattened local invocation index:
+            // index = x + y * TILE_M
+            //
+            // A[local_m, k] is held by lane (local_m, k).
+            const uint a_lane = local_m + k * TILE_M;
+
+            // B[k, local_n] is held by lane (k, local_n).
+            const uint b_lane = k + local_n * TILE_M;
+
+            const float av = subgroupShuffle(a_val, a_lane);
+            const float bv = subgroupShuffle(b_val, b_lane);
+
+            acc += av * bv;
+        }
     }
-    // Add C and save it to C
-    uint c_r = tileRid * TILE_SIZE + gl_LocalInvocationID.x;
-    uint c_c = tileCid * TILE_SIZE + gl_LocalInvocationID.y;
-    uint c_idx = get_c_idx(batchId, c_r, c_c);
-    if(c_r < m && c_c < p){
-        const float v = fma(alpha, local_acc, beta * c[c_idx]);
-        c[c_idx] = v;
+
+    if (global_m < m && global_n < p) {
+        const uint c_idx = get_c_idx(batch_id, global_m, global_n);
+        c[c_idx] = fma(alpha, acc, beta * c[c_idx]);
     }
 }

@@ -2,6 +2,7 @@
 #include <kompute/operations/OpAlgoDispatch.hpp>
 #include <kompute/Kompute.hpp>
 
+#include <ops/Gemv.hpp>
 #include <GemvNaiveFP32_SPIRV>
 
 namespace kpblas{
@@ -10,11 +11,7 @@ namespace kpblas{
         GemvNaiveFP32(
             std::vector<std::shared_ptr<kp::Tensor>> tensors, 
             std::shared_ptr<kp::Algorithm> algorithm,
-            uint32_t b,
-            uint32_t m,
-            uint32_t n,
-            float alpha,
-            float beta
+            const GemvArguments& args
         );
     };
 }

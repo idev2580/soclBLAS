@@ -21,7 +21,7 @@ constexpr int max_p = 1000;
 bool is_equal_tensor(
     std::shared_ptr<kp::TensorT<float>> y,
     const std::vector<float>& sol_y,
-    const float eps = 0.0000009
+    const float eps = 0.0002
 ){
     for(int64_t i=0; i<sol_y.size(); i++){
         const float pos_delta = std::abs(sol_y[i] - y->data()[i]);
@@ -112,9 +112,10 @@ bool gemv_test(
     auto y_tensor = mgr->tensor(y);
 
     // Copy to GPU
+    kpblas::GemvArguments args = {batch, m, n, alpha, beta};
     auto seq = mgr->sequence()->record<kp::OpTensorSyncDevice>({a_tensor, x_tensor, y_tensor})
     ->record<kpblas::GemvNaiveFP32>(
-        {a_tensor, x_tensor,y_tensor}, mgr->algorithm(), batch, m, n, alpha, beta
+        {a_tensor, x_tensor,y_tensor}, mgr->algorithm(), args
     )
     ->record<kp::OpTensorSyncLocal>({a_tensor, x_tensor, y_tensor});
 
@@ -146,9 +147,10 @@ bool gemm_test(
     auto c_tensor = mgr->tensor(c);
 
     // Copy to GPU
+    kpblas::GemmArguments args = {batch, m, n, p, alpha, beta};
     auto seq = mgr->sequence()->record<kp::OpTensorSyncDevice>({a_tensor, b_tensor, c_tensor})
     ->record<kpblas::GemmNaiveFP32>(
-        {a_tensor, b_tensor,c_tensor}, mgr->algorithm(), batch, m, n, p, alpha, beta
+        {a_tensor, b_tensor,c_tensor}, mgr->algorithm(), args
     )
     ->record<kp::OpTensorSyncLocal>({a_tensor, b_tensor, c_tensor});
 
@@ -253,7 +255,7 @@ TEST(GEMMTest, BasicAssertion){
         uint32_t batch = b_dis(gen);
         uint32_t m = m_dis(gen);
         uint32_t n = n_dis(gen);
-        uint32_t p = n_dis(gen);
+        uint32_t p = p_dis(gen);
         // batch = 1;
         // m = 4;
         // n = 4;
