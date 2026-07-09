@@ -1,12 +1,12 @@
 #pragma once
+#include "ops/GemmNaive.hpp"
 #include <kompute/operations/OpAlgoDispatch.hpp>
 #include <kompute/Kompute.hpp>
 
 #include <ops/Gemv.hpp>
-#include <GemvNaiveFP32_SPIRV>
 
 namespace kpblas{
-    class GemvNaiveFP32: public kp::OpAlgoDispatch{
+    class GemvNaiveFP32: public GemmNaiveFP32{
         public:
         GemvNaiveFP32(
             std::vector<std::shared_ptr<kp::Tensor>> tensors, 

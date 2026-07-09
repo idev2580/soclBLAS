@@ -11,6 +11,14 @@ namespace kpblas{
         uint32_t p;
         float alpha;
         float beta;
+        uint32_t flags;
+
+        void setFlags(bool a_transposed, bool b_transposed, bool c_transposed){
+            flags = 0;
+            if(a_transposed) flags |= 1;
+            if(b_transposed) flags |= 2;
+            if(c_transposed) flags |= 4;
+        }
     };
 
     class Gemm: public kp::OpAlgoDispatch{

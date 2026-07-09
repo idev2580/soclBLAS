@@ -21,13 +21,15 @@ constexpr int max_p = 1000;
 bool is_equal_tensor(
     std::shared_ptr<kp::TensorT<float>> y,
     const std::vector<float>& sol_y,
-    const float eps = 0.0002
+    const float eps = 0.00001 // 10^-5까지는 정상으로 본다(합의 순서가 CPU와 많이 다르다.)
 ){
     for(int64_t i=0; i<sol_y.size(); i++){
         const float pos_delta = std::abs(sol_y[i] - y->data()[i]);
-        const float avg = (sol_y[i] + y->data()[i]) / 2.0f;
-        if(pos_delta > eps * avg){
-            printf("[%d]: sol_y=%.15f, y=%.15f, Diff = %.15f\n", (int)i, sol_y[i], y->data()[i], pos_delta);
+        const float cpu_abs = std::abs(sol_y[i]);
+        const float error_rel = pos_delta / cpu_abs;
+
+        if(error_rel > eps){
+            printf("[%d]: sol_y=%.15f, y=%.15f, RelErr = %.15f\n", (int)i, sol_y[i], y->data()[i], error_rel);
             return false;
         }
     }
@@ -128,6 +130,8 @@ bool gemv_test(
 }
 
 bool gemm_test(
+    bool is_a_trans,
+    bool is_b_trans,
     float alpha,
     float beta,
     uint32_t batch,
@@ -148,6 +152,7 @@ bool gemm_test(
 
     // Copy to GPU
     kpblas::GemmArguments args = {batch, m, n, p, alpha, beta};
+    args.setFlags(is_a_trans, is_b_trans, false);
     auto seq = mgr->sequence()->record<kp::OpTensorSyncDevice>({a_tensor, b_tensor, c_tensor})
     ->record<kpblas::GemmNaiveFP32>(
         {a_tensor, b_tensor,c_tensor}, mgr->algorithm(), args
@@ -214,12 +219,12 @@ TEST(GEMVTest, BasicAssertion){
         const float alpha = f_dis(gen);
         const float beta = f_dis(gen);
 
-        std::vector<float> a(batch * matrix_size, 0.0);
-        std::vector<float> x(batch * n, 0.0);
+        std::vector<float> a(matrix_size, 0.0);
+        std::vector<float> x(n * batch, 0.0);
         std::vector<float> y(batch * m, 0.0);
         std::vector<float> cpu_y(batch * m, 0.0);
 
-        for(uint64_t j=0; j < batch * matrix_size; j++){
+        for(uint64_t j=0; j < matrix_size; j++){
             a[j] = f_dis(gen);
         }
         for(uint64_t j=0; j < batch * n; j++){
@@ -231,7 +236,7 @@ TEST(GEMVTest, BasicAssertion){
             cpu_y[j] = ry;
         }
         // Run on CPU
-        SimpleBLAS::gemv(alpha, beta, batch, m, n, a, x, cpu_y);
+        SimpleBLAS::gemv(false, alpha, beta, batch, m, n, a, x, cpu_y);
 
         // Test!
         bool gemv_res = gemv_test(alpha, beta, batch, m, n, a, x, y, cpu_y);
@@ -270,6 +275,9 @@ TEST(GEMMTest, BasicAssertion){
         std::vector<float> c(batch * m * p, 0.0);
         std::vector<float> cpu_c(batch * m * p, 0.0);
 
+        const bool is_a_trans = f_dis(gen) > 0.5f;
+        const bool is_b_trans = f_dis(gen) > 0.5f;
+
         for(uint64_t j=0; j < batch * m * n; j++){
             a[j] = f_dis(gen);
         }
@@ -290,14 +298,15 @@ TEST(GEMMTest, BasicAssertion){
         // printf("[C]\n");
         // print_vector(c);
         // Run on CPU
-        SimpleBLAS::gemm(alpha, beta, batch, m, n, p, a, b, cpu_c);
+        SimpleBLAS::gemm(is_a_trans, is_b_trans, alpha, beta, batch, m, n, p, a, b, cpu_c);
         // printf("[CPU_C](after solve)\n");
         // print_vector(cpu_c);
 
         // Test!
-        bool gemm_res = gemm_test(alpha, beta, batch, m, n, p, a, b, c, cpu_c);
+        bool gemm_res = gemm_test(is_a_trans, is_b_trans, alpha, beta, batch, m, n, p, a, b, c, cpu_c);
         EXPECT_TRUE(gemm_res);
         if(!gemm_res){
+            printf("Transposed(A:%d, B:%d)\n", is_a_trans ? 1 : 0, is_b_trans ? 1 : 0);
             break;
         }
     }

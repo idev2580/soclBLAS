@@ -11,13 +11,19 @@
 // TILE_K <= TILE_N
 // TILE_M * TILE_N == 32 assumed.
 layout(local_size_x = TILE_M, local_size_y = TILE_N, local_size_z = 1) in;
-
+// Note that m, n, p should be given as final form.
+// For example, A^T * B, then m = A.cols, n = A.rows . A^T should be M*N
 layout(constant_id = 0) const uint batch = 0;
 layout(constant_id = 1) const uint m = 0; // A rows, C rows
 layout(constant_id = 2) const uint n = 0; // A cols, B rows, K
 layout(constant_id = 3) const uint p = 0; // B cols, C cols
 layout(constant_id = 4) const float alpha = 0.0;
 layout(constant_id = 5) const float beta = 0.0;
+layout(constant_id=6) const uint flags = 0x0;
+
+const bool is_a_transposed = bool(flags & 0x1);
+const bool is_b_transposed = bool(flags & 0x2);
+const bool is_c_transposed = bool(flags & 0x4);
 
 const uint a_size = m * n;
 const uint b_size = n * p;
@@ -41,15 +47,27 @@ layout(set = 0, binding = 2) restrict buffer tensor_c {
 };
 
 uint get_a_idx(uint batch_id, uint r, uint col) {
-    return (batch_id * a_size) + (r * n) + col;
+    if (!is_a_transposed) {
+        return batch_id * a_size + r * n + col; // A: m x n
+    } else {
+        return batch_id * a_size + col * m + r; // stored as n x m
+    }
 }
 
 uint get_b_idx(uint batch_id, uint r, uint col) {
-    return (batch_id * b_size) + (r * p) + col;
+    if (!is_b_transposed) {
+        return batch_id * b_size + r * p + col; // B: n x p
+    } else {
+        return batch_id * b_size + col * n + r; // stored as p x n
+    }
 }
 
 uint get_c_idx(uint batch_id, uint r, uint col) {
-    return (batch_id * c_size) + (r * p) + col;
+    if (!is_c_transposed) {
+        return batch_id * c_size + r * p + col; // C: m x p
+    } else {
+        return batch_id * c_size + col * m + r; // stored as p x m
+    }
 }
 
 void main() {

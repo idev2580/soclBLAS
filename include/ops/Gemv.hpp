@@ -8,5 +8,6 @@ namespace kpblas{
         uint32_t n;
         float alpha;
         float beta;
+        bool a_transposed;
     };
 }

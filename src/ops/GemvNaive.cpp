@@ -1,24 +1,24 @@
 #include <ops/GemvNaive.hpp>
+#include <ops/GemmNaive.hpp>
 
 namespace kpblas{
     GemvNaiveFP32::GemvNaiveFP32(
         std::vector<std::shared_ptr<kp::Tensor>> tensors, 
         std::shared_ptr<kp::Algorithm> algorithm,
-        const GemvArguments& args
-    ):kp::OpAlgoDispatch(algorithm){
-        // Initialize specialized constants
-        std::vector<float> specConstant;
-        specConstant.resize(sizeof(GemvArguments) / 4);
-        uint8_t* target = (uint8_t*)specConstant.data();
-        memcpy(target, &args, sizeof(GemvArguments));
-        
-        kp::Workgroup wgrp({args.b, args.m});
-        algorithm->rebuild(tensors, std::vector<uint32_t>(
-            std::begin(GemvNaiveFP32_SPIRV), 
-            std::end(GemvNaiveFP32_SPIRV)
-            ), 
-            wgrp,
-            specConstant
-        );
+        GemvArguments args
+    ):GemmNaiveFP32(
+        tensors, 
+        algorithm, 
+        {
+            1, 
+            args.m, args.n, 
+            args.b,  //B's column dimension should be same as the number of vector, which is given as batch.
+            args.alpha, args.beta, 
+            (0x6u | (args.a_transposed ? 0x1u : 0x0u))
+            // Vector will be given as column-major
+            // Output matrix should be written in transposed way...
+        }
+    ){
+        //All jobs done using GEMM.
     }
 }
