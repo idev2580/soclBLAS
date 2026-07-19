@@ -1,27 +1,12 @@
-#include <ops/GemmNaive.hpp>
+#include <soclblas/ops/GemmNaive.hpp>
 
-//Should have same size as the shader code.
-#define TILE_R_SIZE 8
-#define TILE_C_SIZE 4 
-
-namespace kpblas{
+namespace soclblas{
     GemmNaiveFP32::GemmNaiveFP32(
-        std::vector<std::shared_ptr<kp::Tensor>> tensors, 
-        std::shared_ptr<kp::Algorithm> algorithm,
-        const GemmArguments& args
+        socl::Context& ctx,
+        uint32_t tile_m,
+        uint32_t tile_n,
+        uint32_t tile_k
     ):Gemm(
-        tensors, algorithm, args
-    ){
-        const uint32_t tiled_m = (args.m / TILE_R_SIZE) + (args.m % TILE_R_SIZE != 0);
-        const uint32_t tiled_p = (args.p / TILE_C_SIZE) + (args.p % TILE_C_SIZE != 0);
-        auto wgrp = kp::Workgroup({args.b, tiled_m, tiled_p});
-        
-        algorithm->rebuild(tensors, std::vector<uint32_t>(
-            std::begin(GemmNaiveFP32_SPIRV), 
-            std::end(GemmNaiveFP32_SPIRV)
-            ), 
-            wgrp,
-            specConstant
-        );
-    }
+        ctx, std::span<const uint32_t>(GemmNaiveFP32_SPIRV), tile_m, tile_n, tile_k
+    ){}
 }

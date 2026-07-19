@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(kpBLAS)
+project(soclblas)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,25 +14,28 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 FetchContent_Declare(
-  kompute
-  GIT_REPOSITORY https://github.com/KomputeProject/kompute.git
-  GIT_TAG        v0.9.0
+  socl
+  GIT_REPOSITORY https://github.com/idev2580/socl.git
+  GIT_TAG        v0.0.3
 )
-set(KOMPUTE_OPT_LOG_LEVEL "Error" CACHE STRING "" FORCE)
-FetchContent_MakeAvailable(kompute)
-find_package(fmt REQUIRED)
+FetchContent_MakeAvailable(socl)
 
 add_subdirectory(shaders)
 add_subdirectory(src)
 add_subdirectory(tests)
 
-include_directories("${CMAKE_SOURCE_DIR}/include" "${CMAKE_BINARY_DIR}/shaders")
-add_library(kpblas SHARED ${SOURCES})
-target_link_libraries(kpblas PUBLIC kompute fmt)
+add_library(soclblas SHARED ${SOURCES})
+add_dependencies(soclblas compile_shaders)
+target_include_directories(soclblas
+    PUBLIC
+        "${CMAKE_SOURCE_DIR}/include"
+        "${CMAKE_BINARY_DIR}/shaders"
+)
+target_link_libraries(soclblas PUBLIC socl fmt)
 
 if(TEST_SOURCES)
-    add_executable(kpblas_tests ${TEST_SOURCES})
-    target_link_libraries(kpblas_tests PRIVATE kpblas GTest::gtest_main)
+    add_executable(soclblas_tests ${TEST_SOURCES})
+    target_link_libraries(soclblas_tests PRIVATE soclblas GTest::gtest_main)
     include(GoogleTest)
-    gtest_discover_tests(kpblas_tests)
+    gtest_discover_tests(soclblas_tests)
 endif()

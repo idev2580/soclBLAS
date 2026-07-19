@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 
-namespace kpblas{
+namespace soclblas{
     struct GemvArguments{
         uint32_t b;
         uint32_t m;

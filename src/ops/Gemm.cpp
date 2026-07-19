@@ -1,16 +1,65 @@
-#include <ops/Gemm.hpp>
+#include "socl/ShaderPipeline.hpp"
+#include <soclblas/ops/Gemm.hpp>
 
-namespace kpblas{
+namespace soclblas{
     Gemm::Gemm(
-        std::vector<std::shared_ptr<kp::Tensor>> tensors, 
-        std::shared_ptr<kp::Algorithm> algorithm,
+        socl::Context& ctx,
+        std::span<const uint32_t> shaderBytecodes,
+        uint32_t tile_m,
+        uint32_t tile_n,
+        uint32_t tile_k
+    ):ctx(ctx), tile_m(tile_m), tile_n(tile_n), tile_k(tile_k){
+        this->pipeline = ctx.createShaderPipeline({
+            .spirv = shaderBytecodes,
+            .bindings = {
+                {0, socl::DescriptorType::StorageBuffer},
+                {1, socl::DescriptorType::StorageBuffer},
+                {2, socl::DescriptorType::StorageBuffer},
+            },
+            .pushConstantSize = sizeof(GemmArguments),
+            .specConstants = {
+                {0, socl::specConstant(std::uint32_t{tile_m})},
+                {1, socl::specConstant(std::uint32_t{tile_n})},
+                {2, socl::specConstant(std::uint32_t{tile_k})}
+            }
+        });
+        this->descSet = ctx.createDescriptorSet(pipeline);
+    }
+    void Gemm::execute(
+        std::span<socl::Buffer> inputs,
+        std::span<socl::Buffer> inouts,
+        std::span<socl::Buffer> outputs,
+        const void* args,
+        std::size_t argsSize
+    ){
+        // Implement the forward pass of GEMM operation
+        this->descSet.bindBuffer(0, inputs[0]);
+        this->descSet.bindBuffer(1, inputs[1]);
+        this->descSet.bindBuffer(2, inouts[0]);
+        this->descSet.update();
+
+        ctx.begin();
+        ctx.use(pipeline);
+        ctx.bind(descSet);
+        ctx.push(args, argsSize);
+
+        GemmArguments* gemmArgs = (GemmArguments*)args;
+        const uint32_t tile_r_size = tile_m;
+        const uint32_t tile_c_size = tile_k;
+        const uint32_t tiled_m = (gemmArgs->m / tile_r_size) + (gemmArgs->m % tile_r_size != 0);
+        const uint32_t tiled_p = (gemmArgs->p / tile_c_size) + (gemmArgs->p % tile_c_size != 0);
+        ctx.dispatch(gemmArgs->b, tiled_m, tiled_p);
+        ctx.submitAndWait();
+    }
+    void Gemm::operator()(
+        socl::Buffer A,
+        socl::Buffer B,
+        socl::Buffer C,
         const GemmArguments& args
-    ):kp::OpAlgoDispatch(algorithm){
-        // Write into specConstant buffer.
-        specConstant.resize(sizeof(GemmArguments) / 4);
-        uint8_t* target = (uint8_t*)specConstant.data();
-        memcpy(target, &args, sizeof(GemmArguments));
-        
-        // Tiling and other things should be done in real implementation
+    ){
+        std::vector<socl::Buffer> inputs = {A, B};
+        std::vector<socl::Buffer> inouts = {C};
+        std::vector<socl::Buffer> outputs = {};
+        this->execute(inputs, inouts, outputs, &args, sizeof(GemmArguments));
     }
 }
