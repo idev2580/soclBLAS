@@ -16,7 +16,7 @@ FetchContent_MakeAvailable(googletest)
 FetchContent_Declare(
   socl
   GIT_REPOSITORY https://github.com/idev2580/socl.git
-  GIT_TAG        v0.0.3
+  GIT_TAG        v0.0.3a
 )
 FetchContent_MakeAvailable(socl)
 

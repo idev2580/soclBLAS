@@ -48,9 +48,9 @@ TEST(GEMMTest, BasicAssertion){
     socl::Context ctx;
     ctx.printGpuInfo(std::cout);
     soclblas::GemmNaiveFP32 gemm(ctx, 8, 4, 4);
-    auto bufferA = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_n, socl::BufferType::HostVisible);
-    auto bufferB = ctx.createBuffer(sizeof(float) * max_batch * max_n * max_p, socl::BufferType::HostVisible);
-    auto bufferC = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_p, socl::BufferType::HostVisible);
+    auto bufferA = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_n, socl::BufferType::Auto);
+    auto bufferB = ctx.createBuffer(sizeof(float) * max_batch * max_n * max_p, socl::BufferType::Auto);
+    auto bufferC = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_p, socl::BufferType::Auto);
 
     std::random_device rd;
     std::mt19937 gen(rd());
