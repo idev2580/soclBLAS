@@ -31,7 +31,7 @@ target_include_directories(soclblas
         "${CMAKE_SOURCE_DIR}/include"
         "${CMAKE_BINARY_DIR}/shaders"
 )
-target_link_libraries(soclblas PUBLIC socl fmt)
+target_link_libraries(soclblas PUBLIC socl)
 
 if(TEST_SOURCES)
     add_executable(soclblas_tests ${TEST_SOURCES})
