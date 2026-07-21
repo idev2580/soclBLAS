@@ -1,0 +1,203 @@
+#version 460
+#pragma use_vulkan_memory_model
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_shuffle : require
+#extension GL_KHR_memory_scope_semantics : require
+#extension GL_KHR_cooperative_matrix : require
+
+// TILE_K <= TILE_N
+// TILE_M * TILE_N == 32 assumed.
+layout(constant_id = 0) const uint tile_m = 8;
+layout(constant_id = 1) const uint tile_n = 4;
+layout(constant_id = 2) const uint tile_k = 4;
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
+
+// C := A @ B
+layout(set = 0, binding = 0) readonly restrict coherent buffer tensor_a {
+    float a[];
+};
+
+layout(set = 0, binding = 1) readonly restrict coherent buffer tensor_b {
+    float b[];
+};
+
+layout(set = 0, binding = 2) writeonly restrict coherent buffer tensor_c {
+    float c[];
+};
+
+layout(push_constant) uniform constants {
+    uint batch;
+    uint m;
+    uint n;
+    uint p;
+    uint flags;
+} args;
+
+uint get_a_idx(uint batch_id, uint r, uint col, uint a_size, bool is_a_transposed) {
+    if (!is_a_transposed) {
+        return batch_id * a_size + r * args.n + col; // A: m x n
+    } else {
+        return batch_id * a_size + col * args.m + r; // stored as n x m
+    }
+}
+
+uint get_b_idx(uint batch_id, uint r, uint col, uint b_size, bool is_b_transposed) {
+    if (!is_b_transposed) {
+        return batch_id * b_size + r * args.p + col; // B: n x p
+    } else {
+        return batch_id * b_size + col * args.n + r; // stored as p x n
+    }
+}
+
+uint get_c_idx(uint batch_id, uint r, uint col, uint c_size, bool is_c_transposed) {
+    if (!is_c_transposed) {
+        return batch_id * c_size + r * args.p + col; // C: m x p
+    } else {
+        return batch_id * c_size + col * args.m + r; // stored as p x m
+    }
+}
+
+void main() {
+    const bool is_a_transposed = bool(args.flags & 0x1);
+    const bool is_b_transposed = bool(args.flags & 0x2);
+    const bool is_c_transposed = bool(args.flags & 0x4);
+
+    const uint a_size = args.m * args.n;
+    const uint b_size = args.n * args.p;
+    const uint c_size = args.m * args.p;
+
+    const uint tiled_k_cnt = (args.n / tile_k) + (args.n % tile_k == 0 ? 0 : 1);
+
+    const uint batch_id = gl_WorkGroupID.x;
+    const uint tile_m_id = gl_WorkGroupID.y;
+    const uint tile_n_id = gl_WorkGroupID.z;
+    const uint tile_m_begin = tile_m_id * tile_m;
+    const uint tile_n_begin = tile_n_id * tile_n;
+
+    const bool is_full_output_tile =
+        tile_m_begin + tile_m <= args.m &&
+        tile_n_begin + tile_n <= args.p;
+    const bool has_full_k_tiles = args.n % tile_k == 0;
+
+    if (is_full_output_tile && has_full_k_tiles) {
+        coopmat<float, gl_ScopeSubgroup, tile_m, tile_k, gl_MatrixUseA> mat_a;
+        coopmat<float, gl_ScopeSubgroup, tile_k, tile_n, gl_MatrixUseB> mat_b;
+        coopmat<float, gl_ScopeSubgroup, tile_m, tile_n, gl_MatrixUseAccumulator> acc =
+            coopmat<float, gl_ScopeSubgroup, tile_m, tile_n, gl_MatrixUseAccumulator>(0.0);
+
+        for (uint tile_k_id = 0; tile_k_id < tiled_k_cnt; tile_k_id++) {
+            const uint tile_k_begin = tile_k_id * tile_k;
+
+            if (!is_a_transposed) {
+                const uint a_offset = batch_id * a_size + tile_m_begin * args.n + tile_k_begin;
+                const uint a_stride = args.n;
+                coopMatLoad(
+                    mat_a,
+                    a,
+                    a_offset,
+                    a_stride,
+                    gl_CooperativeMatrixLayoutRowMajor
+                );
+            } else {
+                const uint a_offset = batch_id * a_size + tile_k_begin * args.m + tile_m_begin;
+                const uint a_stride = args.m;
+                coopMatLoad(
+                    mat_a,
+                    a,
+                    a_offset,
+                    a_stride,
+                    gl_CooperativeMatrixLayoutColumnMajor
+                );
+            }
+
+            if (!is_b_transposed) {
+                const uint b_offset = batch_id * b_size + tile_k_begin * args.p + tile_n_begin;
+                const uint b_stride = args.p;
+                coopMatLoad(
+                    mat_b,
+                    b,
+                    b_offset,
+                    b_stride,
+                    gl_CooperativeMatrixLayoutRowMajor
+                );
+            } else {
+                const uint b_offset = batch_id * b_size + tile_n_begin * args.n + tile_k_begin;
+                const uint b_stride = args.n;
+                coopMatLoad(
+                    mat_b,
+                    b,
+                    b_offset,
+                    b_stride,
+                    gl_CooperativeMatrixLayoutColumnMajor
+                );
+            }
+
+            acc = coopMatMulAdd(mat_a, mat_b, acc);
+        }
+
+        if (!is_c_transposed) {
+            const uint c_offset = batch_id * c_size + tile_m_begin * args.p + tile_n_begin;
+            const uint c_stride = args.p;
+            coopMatStore(
+                acc,
+                c,
+                c_offset,
+                c_stride,
+                gl_CooperativeMatrixLayoutRowMajor
+            );
+        } else {
+            const uint c_offset = batch_id * c_size + tile_n_begin * args.m + tile_m_begin;
+            const uint c_stride = args.m;
+            coopMatStore(
+                acc,
+                c,
+                c_offset,
+                c_stride,
+                gl_CooperativeMatrixLayoutColumnMajor
+            );
+        }
+
+    } else {
+        const uint local_m = gl_LocalInvocationID.x; // 0 .. TILE_M - 1
+        const uint local_n = gl_LocalInvocationID.y; // 0 .. TILE_N - 1
+
+        const uint global_m = tile_m_begin + local_m;
+        const uint global_n = tile_n_begin + local_n;
+
+        float acc = 0.0;
+
+        for (uint tile_k_id = 0; tile_k_id < tiled_k_cnt; tile_k_id++) {
+            float a_val = 0.0;
+            float b_val = 0.0;
+
+            const uint a_r = global_m;
+            const uint a_c = tile_k_id * tile_k + local_n;
+
+            if (local_n < tile_k && a_r < args.m && a_c < args.n) {
+                a_val = a[get_a_idx(batch_id, a_r, a_c, a_size, is_a_transposed)];
+            }
+
+            const uint b_r = tile_k_id * tile_k + local_m;
+            const uint b_c = global_n;
+
+            if (local_m < tile_k && b_r < args.n && b_c < args.p) {
+                b_val = b[get_b_idx(batch_id, b_r, b_c, b_size, is_b_transposed)];
+            }
+
+            for (uint k = 0; k < tile_k; k++) {
+                const uint a_lane = local_m + k * tile_m;
+                const uint b_lane = k + local_n * tile_m;
+
+                const float av = subgroupShuffle(a_val, a_lane);
+                const float bv = subgroupShuffle(b_val, b_lane);
+
+                acc += av * bv;
+            }
+        }
+
+        if (global_m < args.m && global_n < args.p) {
+            c[get_c_idx(batch_id, global_m, global_n, c_size, is_c_transposed)] = acc;
+        }
+    }
+}

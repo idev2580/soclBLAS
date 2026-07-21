@@ -4,6 +4,8 @@
 #include <memory>
 #include <random>
 #include <soclblas/ops/GemmNaive.hpp>
+#include <soclblas/ops/MatMulNaive.hpp>
+#include <soclblas/ops/MatMulWmma.hpp>
 #include "lib/MinCpuBlas.hpp"
 
 constexpr int gemm_test_iter = 10;
@@ -11,6 +13,7 @@ constexpr int max_batch = 2;
 constexpr int max_m = 1000;
 constexpr int max_n = 1000;
 constexpr int max_p = 1000;
+constexpr int matmul_test_iter = 10;
 
 bool is_equal_tensor(
     const std::vector<float>& y,
@@ -42,6 +45,116 @@ void print_vector(
         }
     }
     printf("]\n");
+}
+
+template<typename MatMulOp>
+void run_matmul_test(const char* op_name){
+    socl::Context ctx;
+    //ctx.printGpuInfo(std::cout);
+    for(auto tile : ctx.cooperativeMatrixSupportInfo().tiles){
+        printf(
+            "Tile: m=%d, n=%d, k=%d, aType=%d, bType=%d, cType=%d, resultType=%d, saturatingAccumulation=%d, scope=%d\n",
+            tile.m,
+            tile.n,
+            tile.k,
+            (int)tile.aType,
+            (int)tile.bType,
+            (int)tile.cType,
+            (int)tile.resultType,
+            (int)tile.saturatingAccumulation,
+            (int)tile.scope
+        );
+    }
+    MatMulOp matmul(ctx, 8, 4, 4);
+    auto bufferA = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_n, socl::BufferType::Auto);
+    auto bufferB = ctx.createBuffer(sizeof(float) * max_batch * max_n * max_p, socl::BufferType::Auto);
+    auto bufferC = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_p, socl::BufferType::Auto);
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> b_dis(1, max_batch);
+    std::uniform_int_distribution<int> m_dis(1, max_m);
+    std::uniform_int_distribution<int> n_dis(1, max_n);
+    std::uniform_int_distribution<int> p_dis(1, max_p);
+    std::uniform_real_distribution<float> f_dis(0.0, 1.0);
+    for(int i=0; i < matmul_test_iter; i++){
+        uint32_t batch = b_dis(gen);
+        uint32_t m = m_dis(gen);
+        uint32_t n = n_dis(gen);
+        uint32_t p = p_dis(gen);
+
+        std::vector<float> a(batch * m * n, 0.0);
+        std::vector<float> b(batch * n * p, 0.0);
+        std::vector<float> c(batch * m * p, 0.0);
+        std::vector<float> cpu_c(batch * m * p, 0.0);
+        std::vector<float> expected_c(batch * m * p, 0.0);
+
+        const bool is_a_trans = f_dis(gen) > 0.5f;
+        const bool is_b_trans = f_dis(gen) > 0.5f;
+        const bool is_c_trans = f_dis(gen) > 0.5f;
+
+        for(uint64_t j=0; j < batch * m * n; j++){
+            a[j] = f_dis(gen);
+        }
+        for(uint64_t j=0; j < batch * n * p; j++){
+            b[j] = f_dis(gen);
+        }
+
+        SimpleBLAS::gemm(
+            is_a_trans,
+            is_b_trans,
+            1.0f,
+            0.0f,
+            batch,
+            m,
+            n,
+            p,
+            a,
+            b,
+            cpu_c
+        );
+
+        if(!is_c_trans){
+            expected_c = cpu_c;
+        } else {
+            const uint64_t c_size = uint64_t(m) * uint64_t(p);
+            for(uint32_t batch_id=0; batch_id < batch; batch_id++){
+                for(uint32_t r=0; r < m; r++){
+                    for(uint32_t col=0; col < p; col++){
+                        expected_c[uint64_t(batch_id) * c_size + uint64_t(col) * m + r] =
+                            cpu_c[uint64_t(batch_id) * c_size + uint64_t(r) * p + col];
+                    }
+                }
+            }
+        }
+
+        bufferA.write(a.data(), sizeof(float) * batch * m * n);
+        bufferB.write(b.data(), sizeof(float) * batch * n * p);
+        bufferC.write(c.data(), sizeof(float) * batch * m * p);
+        soclblas::MatMulArguments matmul_args = {
+            .b = batch,
+            .m = m,
+            .n = n,
+            .p = p,
+            .flags = 0
+        };
+        matmul_args.setFlags(is_a_trans, is_b_trans, is_c_trans);
+        matmul(bufferA, bufferB, bufferC, matmul_args);
+        bufferC.read(c.data(), sizeof(float) * batch * m * p);
+
+        const bool matmul_res = is_equal_tensor(c, expected_c);
+        EXPECT_TRUE(matmul_res) << op_name << " result is not equal to CPU GEMM result!";
+        if(!matmul_res){
+            printf(
+                "%s Transposed(A:%d, B:%d, C:%d)\n",
+                op_name,
+                is_a_trans ? 1 : 0,
+                is_b_trans ? 1 : 0,
+                is_c_trans ? 1 : 0
+            );
+            break;
+        }
+    }
 }
 
 TEST(GEMMTest, BasicAssertion){
@@ -129,4 +242,12 @@ TEST(GEMMTest, BasicAssertion){
             break;
         }
     }
+}
+
+TEST(MatMulNaiveTest, BasicAssertion){
+    run_matmul_test<soclblas::MatMulNaiveFP32>("MatMulNaiveFP32");
+}
+
+TEST(MatMulWmmaTest, BasicAssertion){
+    run_matmul_test<soclblas::MatMulWmmaFP32>("MatMulWmmaFP32");
 }

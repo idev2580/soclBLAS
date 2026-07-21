@@ -1,8 +1,8 @@
 #include "socl/ShaderPipeline.hpp"
-#include <soclblas/ops/Gemm.hpp>
+#include <soclblas/ops/MatMul.hpp>
 
 namespace soclblas{
-    Gemm::Gemm(
+    MatMul::MatMul(
         socl::Context& ctx,
         std::span<const uint32_t> shaderBytecodes,
         uint32_t tile_m,
@@ -16,7 +16,7 @@ namespace soclblas{
                 {1, socl::DescriptorType::StorageBuffer},
                 {2, socl::DescriptorType::StorageBuffer},
             },
-            .pushConstantSize = sizeof(GemmArguments),
+            .pushConstantSize = sizeof(MatMulArguments),
             .specConstants = {
                 {0, socl::specConstant(std::uint32_t{tile_m})},
                 {1, socl::specConstant(std::uint32_t{tile_n})},
@@ -25,7 +25,7 @@ namespace soclblas{
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
-    void Gemm::execute(
+    void MatMul::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -35,7 +35,7 @@ namespace soclblas{
         // Implement the forward pass of GEMM operation
         this->descSet.bindBuffer(0, inputs[0]);
         this->descSet.bindBuffer(1, inputs[1]);
-        this->descSet.bindBuffer(2, inouts[0]);
+        this->descSet.bindBuffer(2, outputs[0]);
         this->descSet.update();
 
         ctx.begin();
@@ -43,23 +43,23 @@ namespace soclblas{
         ctx.bind(descSet);
         ctx.push(args, argsSize);
 
-        GemmArguments* gemmArgs = (GemmArguments*)args;
+        MatMulArguments* matmulArgs = (MatMulArguments*)args;
         const uint32_t tile_r_size = tile_m;
         const uint32_t tile_c_size = tile_n;
-        const uint32_t tiled_m = (gemmArgs->m / tile_r_size) + (gemmArgs->m % tile_r_size != 0);
-        const uint32_t tiled_p = (gemmArgs->p / tile_c_size) + (gemmArgs->p % tile_c_size != 0);
-        ctx.dispatch(gemmArgs->b, tiled_m, tiled_p);
+        const uint32_t tiled_m = (matmulArgs->m / tile_r_size) + (matmulArgs->m % tile_r_size != 0);
+        const uint32_t tiled_p = (matmulArgs->p / tile_c_size) + (matmulArgs->p % tile_c_size != 0);
+        ctx.dispatch(matmulArgs->b, tiled_m, tiled_p);
         ctx.submitAndWait();
     }
-    void Gemm::operator()(
+    void MatMul::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
-        const GemmArguments& args
+        const MatMulArguments& args
     ){
         std::vector<socl::Buffer> inputs = {A, B};
-        std::vector<socl::Buffer> inouts = {C};
-        std::vector<socl::Buffer> outputs = {};
-        this->execute(inputs, inouts, outputs, &args, sizeof(GemmArguments));
+        std::vector<socl::Buffer> inouts = {};
+        std::vector<socl::Buffer> outputs = {C};
+        this->execute(inputs, inouts, outputs, &args, sizeof(MatMulArguments));
     }
 }
