@@ -28,8 +28,8 @@ add_library(soclblas SHARED ${SOURCES})
 add_dependencies(soclblas compile_shaders)
 target_include_directories(soclblas
     PUBLIC
-        "${CMAKE_SOURCE_DIR}/include"
-        "${CMAKE_BINARY_DIR}/shaders"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_BINARY_DIR}/shaders"
 )
 target_link_libraries(soclblas PUBLIC socl)
 
