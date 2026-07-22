@@ -11,14 +11,15 @@ namespace soclblas{
         uint32_t m;
         uint32_t n;
         uint32_t p;
-        uint32_t flags;
-
-        void setFlags(bool a_transposed, bool b_transposed, bool c_transposed){
-            flags = 0;
-            if(a_transposed) flags |= 1;
-            if(b_transposed) flags |= 2;
-            if(c_transposed) flags |= 4;
-        }
+        uint32_t a_stride;
+        uint32_t b_stride;
+        uint32_t c_stride;
+        uint32_t a_m_stride;
+        uint32_t a_n_stride;
+        uint32_t b_n_stride;
+        uint32_t b_p_stride;
+        uint32_t c_m_stride;
+        uint32_t c_p_stride;
     };
 
     class MatMul: public Operator{
@@ -29,7 +30,7 @@ namespace soclblas{
 
         uint32_t tile_m;
         uint32_t tile_n;
-        uint32_t tile_k;
+        uint32_t tile_p;
 
         public:
         MatMul(

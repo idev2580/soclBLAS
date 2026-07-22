@@ -7,7 +7,6 @@ set(
     # "${CMAKE_SOURCE_DIR}/shaders/GemvNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MatMulNaiveFP32.comp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/MatMulWmmaFP32.comp"
 )
 set(
     ALL_SHADER_SOURCES

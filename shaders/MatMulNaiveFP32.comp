@@ -5,14 +5,14 @@
 #extension GL_KHR_shader_subgroup_ballot: enable
 #extension GL_KHR_shader_subgroup_arithmetic: enable
 
-// TILE_K <= TILE_N
-// TILE_M * TILE_N == 32 assumed.
+// tile_n <= tile_m and tile_n <= tile_p.
+// tile_m * tile_p == 32 assumed.
 layout(constant_id = 0) const uint tile_m = 8;
 layout(constant_id = 1) const uint tile_n = 4;
-layout(constant_id = 2) const uint tile_k = 4;
-layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
+layout(constant_id = 2) const uint tile_p = 4;
+layout(local_size_x_id = 0, local_size_y_id = 2, local_size_z = 1) in;
 
-// C := A @ B
+// c := alpha * A * B + beta * C
 layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
     float a[];
 };
@@ -29,95 +29,89 @@ layout( push_constant ) uniform constants {
     uint m;
     uint n;
     uint p;
-    uint flags;
+    uint a_stride;
+    uint b_stride;
+    uint c_stride;
+    uint a_m_stride;
+    uint a_n_stride;
+    uint b_n_stride;
+    uint b_p_stride;
+    uint c_m_stride;
+    uint c_p_stride;
 } args;
 
 
-uint get_a_idx(uint batch_id, uint r, uint col, uint a_size, bool is_a_transposed) {
-    if (!is_a_transposed) {
-        return batch_id * a_size + r * args.n + col; // A: m x n
-    } else {
-        return batch_id * a_size + col * args.m + r; // stored as n x m
-    }
+uint get_a_idx(uint batch_id, uint r, uint col) {
+    return batch_id * args.a_stride + r * args.a_m_stride + col * args.a_n_stride;
 }
 
-uint get_b_idx(uint batch_id, uint r, uint col, uint b_size, bool is_b_transposed) {
-    if (!is_b_transposed) {
-        return batch_id * b_size + r * args.p + col; // B: n x p
-    } else {
-        return batch_id * b_size + col * args.n + r; // stored as p x n
-    }
+uint get_b_idx(uint batch_id, uint r, uint col) {
+    return batch_id * args.b_stride + r * args.b_n_stride + col * args.b_p_stride;
 }
 
-uint get_c_idx(uint batch_id, uint r, uint col, uint c_size, bool is_c_transposed) {
-    if (!is_c_transposed) {
-        return batch_id * c_size + r * args.p + col; // C: m x p
-    } else {
-        return batch_id * c_size + col * args.m + r; // stored as p x m
-    }
+uint get_c_idx(uint batch_id, uint r, uint col) {
+    return batch_id * args.c_stride + r * args.c_m_stride + col * args.c_p_stride;
 }
 
 void main() {
-    const bool is_a_transposed = bool(args.flags & 0x1);
-    const bool is_b_transposed = bool(args.flags & 0x2);
-    const bool is_c_transposed = bool(args.flags & 0x4);
-
-    const uint a_size = args.m * args.n;
-    const uint b_size = args.n * args.p;
-    const uint c_size = args.m * args.p;
-
     const uint tiled_m_cnt = (args.m / tile_m) + (args.m % tile_m == 0 ? 0 : 1);
-    const uint tiled_k_cnt = (args.n / tile_k) + (args.n % tile_k == 0 ? 0 : 1);
-    const uint tiled_n_cnt = (args.p / tile_n) + (args.p % tile_n == 0 ? 0 : 1);
+    const uint tiled_n_cnt = (args.n / tile_n) + (args.n % tile_n == 0 ? 0 : 1);
+    const uint tiled_p_cnt = (args.p / tile_p) + (args.p % tile_p == 0 ? 0 : 1);
 
     const uint batch_id = gl_WorkGroupID.x;
     const uint tile_m_id = gl_WorkGroupID.y;
-    const uint tile_n_id = gl_WorkGroupID.z;
+    const uint tile_p_id = gl_WorkGroupID.z;
 
-    const uint local_m = gl_LocalInvocationID.x; // 0 .. TILE_M - 1
-    const uint local_n = gl_LocalInvocationID.y; // 0 .. TILE_N - 1
+    const uint lane_id = gl_SubgroupInvocationID;
+
+    if (gl_SubgroupID != 0 || lane_id >= tile_m * tile_p) {
+        return;
+    }
+
+    const uint local_m = lane_id % tile_m; // 0 .. TILE_M - 1
+    const uint local_p = lane_id / tile_m; // 0 .. TILE_P - 1
 
     const uint global_m = tile_m_id * tile_m + local_m;
-    const uint global_n = tile_n_id * tile_n + local_n;
+    const uint global_p = tile_p_id * tile_p + local_p;
 
     float acc = 0.0;
 
-    for (uint tile_k_id = 0; tile_k_id < tiled_k_cnt; tile_k_id++) {
+    for (uint tile_n_id = 0; tile_n_id < tiled_n_cnt; tile_n_id++) {
         float a_val = 0.0;
         float b_val = 0.0;
 
-        // A tile: TILE_M x TILE_K
+        // A tile: TILE_M x TILE_N
         //
-        // Lane (local_m, local_n) loads A[local_m, local_n]
-        // only when local_n < TILE_K.
+        // Lane (local_m, local_p) loads A[local_m, local_p]
+        // only when local_p < TILE_N.
         const uint a_r = global_m;
-        const uint a_c = tile_k_id * tile_k + local_n;
+        const uint a_c = tile_n_id * tile_n + local_p;
 
-        if (local_n < tile_k && a_r < args.m && a_c < args.n) {
-            a_val = a[get_a_idx(batch_id, a_r, a_c, a_size, is_a_transposed)];
+        if (local_p < tile_n && a_r < args.m && a_c < args.n) {
+            a_val = a[get_a_idx(batch_id, a_r, a_c)];
         }
 
-        // B tile: TILE_K x TILE_N
+        // B tile: TILE_N x TILE_P
         //
-        // Lane (local_m, local_n) loads B[local_m, local_n]
-        // only when local_m < TILE_K.
-        const uint b_r = tile_k_id * tile_k + local_m;
-        const uint b_c = global_n;
+        // Lane (local_m, local_p) loads B[local_m, local_p]
+        // only when local_m < TILE_N.
+        const uint b_r = tile_n_id * tile_n + local_m;
+        const uint b_c = global_p;
 
-        if (local_m < tile_k && b_r < args.n && b_c < args.p) {
-            b_val = b[get_b_idx(batch_id, b_r, b_c, b_size, is_b_transposed)];
+        if (local_m < tile_n && b_r < args.n && b_c < args.p) {
+            b_val = b[get_b_idx(batch_id, b_r, b_c)];
         }
 
-        // Dot product for C[global_m, global_n].
-        for (uint k = 0; k < tile_k; k++) {
-            // Flattened local invocation index:
-            // index = x + y * TILE_M
+        // Dot product for C[global_m, global_p].
+        for (uint n_offset = 0; n_offset < tile_n; n_offset++) {
+            // Subgroup lane index:
+            // lane = m + p * TILE_M
             //
-            // A[local_m, k] is held by lane (local_m, k).
-            const uint a_lane = local_m + k * tile_m;
+            // A[local_m, n_offset] is held by lane (local_m, n_offset).
+            const uint a_lane = local_m + n_offset * tile_m;
 
-            // B[k, local_n] is held by lane (k, local_n).
-            const uint b_lane = k + local_n * tile_m;
+            // B[n_offset, local_p] is held by lane (n_offset, local_p).
+            const uint b_lane = n_offset + local_p * tile_m;
 
             const float av = subgroupShuffle(a_val, a_lane);
             const float bv = subgroupShuffle(b_val, b_lane);
@@ -126,8 +120,8 @@ void main() {
         }
     }
 
-    if (global_m < args.m && global_n < args.p) {
-        const uint c_idx = get_c_idx(batch_id, global_m, global_n, c_size, is_c_transposed);
+    if (global_m < args.m && global_p < args.p) {
+        const uint c_idx = get_c_idx(batch_id, global_m, global_p);
         c[c_idx] = acc;
     }
 }

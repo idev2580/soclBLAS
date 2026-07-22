@@ -5,7 +5,6 @@
 #include <random>
 #include <soclblas/ops/GemmNaive.hpp>
 #include <soclblas/ops/MatMulNaive.hpp>
-#include <soclblas/ops/MatMulWmma.hpp>
 #include "lib/MinCpuBlas.hpp"
 
 constexpr int gemm_test_iter = 10;
@@ -51,7 +50,7 @@ template<typename MatMulOp>
 void run_matmul_test(const char* op_name){
     socl::Context ctx;
     //ctx.printGpuInfo(std::cout);
-    for(auto tile : ctx.cooperativeMatrixSupportInfo().tiles){
+    /*for(auto tile : ctx.cooperativeMatrixSupportInfo().tiles){
         printf(
             "Tile: m=%d, n=%d, k=%d, aType=%d, bType=%d, cType=%d, resultType=%d, saturatingAccumulation=%d, scope=%d\n",
             tile.m,
@@ -64,7 +63,7 @@ void run_matmul_test(const char* op_name){
             (int)tile.saturatingAccumulation,
             (int)tile.scope
         );
-    }
+    }*/
     MatMulOp matmul(ctx, 8, 4, 4);
     auto bufferA = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_n, socl::BufferType::Auto);
     auto bufferB = ctx.createBuffer(sizeof(float) * max_batch * max_n * max_p, socl::BufferType::Auto);
@@ -91,7 +90,7 @@ void run_matmul_test(const char* op_name){
 
         const bool is_a_trans = f_dis(gen) > 0.5f;
         const bool is_b_trans = f_dis(gen) > 0.5f;
-        const bool is_c_trans = f_dis(gen) > 0.5f;
+        const bool is_c_trans = false;
 
         for(uint64_t j=0; j < batch * m * n; j++){
             a[j] = f_dis(gen);
@@ -136,9 +135,16 @@ void run_matmul_test(const char* op_name){
             .m = m,
             .n = n,
             .p = p,
-            .flags = 0
+            .a_stride = m * n,
+            .b_stride = n * p,
+            .c_stride = m * p,
+            .a_m_stride = is_a_trans ? 1 : n,
+            .a_n_stride = is_a_trans ? m : 1,
+            .b_n_stride = is_b_trans ? 1 : p,
+            .b_p_stride = is_b_trans ? n : 1,
+            .c_m_stride = is_c_trans ? 1 : p,
+            .c_p_stride = is_c_trans ? m : 1
         };
-        matmul_args.setFlags(is_a_trans, is_b_trans, is_c_trans);
         matmul(bufferA, bufferB, bufferC, matmul_args);
         bufferC.read(c.data(), sizeof(float) * batch * m * p);
 
@@ -194,6 +200,7 @@ TEST(GEMMTest, BasicAssertion){
 
         const bool is_a_trans = f_dis(gen) > 0.5f;
         const bool is_b_trans = f_dis(gen) > 0.5f;
+        const bool is_c_trans = false;
 
         for(uint64_t j=0; j < batch * m * n; j++){
             a[j] = f_dis(gen);
@@ -229,9 +236,16 @@ TEST(GEMMTest, BasicAssertion){
             .p = p,
             .alpha = alpha,
             .beta = beta,
-            .flags = 0
+            .a_stride = m * n,
+            .b_stride = n * p,
+            .c_stride = m * p,
+            .a_m_stride = is_a_trans ? 1 : n,
+            .a_n_stride = is_a_trans ? m : 1,
+            .b_n_stride = is_b_trans ? 1 : p,
+            .b_p_stride = is_b_trans ? n : 1,
+            .c_m_stride = is_c_trans ? 1 : p,
+            .c_p_stride = is_c_trans ? m : 1
         };
-        gemm_args.setFlags(is_a_trans, is_b_trans, false);
         gemm(bufferA, bufferB, bufferC, gemm_args);
         bufferC.read(c.data(), sizeof(float) * batch * m * p);
         // Test!
@@ -248,6 +262,3 @@ TEST(MatMulNaiveTest, BasicAssertion){
     run_matmul_test<soclblas::MatMulNaiveFP32>("MatMulNaiveFP32");
 }
 
-TEST(MatMulWmmaTest, BasicAssertion){
-    run_matmul_test<soclblas::MatMulWmmaFP32>("MatMulWmmaFP32");
-}

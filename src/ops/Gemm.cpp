@@ -7,8 +7,8 @@ namespace soclblas{
         std::span<const uint32_t> shaderBytecodes,
         uint32_t tile_m,
         uint32_t tile_n,
-        uint32_t tile_k
-    ):ctx(ctx), tile_m(tile_m), tile_n(tile_n), tile_k(tile_k){
+        uint32_t tile_p
+    ):ctx(ctx), tile_m(tile_m), tile_n(tile_n), tile_p(tile_p){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = shaderBytecodes,
             .bindings = {
@@ -20,7 +20,7 @@ namespace soclblas{
             .specConstants = {
                 {0, socl::specConstant(std::uint32_t{tile_m})},
                 {1, socl::specConstant(std::uint32_t{tile_n})},
-                {2, socl::specConstant(std::uint32_t{tile_k})}
+                {2, socl::specConstant(std::uint32_t{tile_p})}
             }
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
@@ -45,7 +45,7 @@ namespace soclblas{
 
         GemmArguments* gemmArgs = (GemmArguments*)args;
         const uint32_t tile_r_size = tile_m;
-        const uint32_t tile_c_size = tile_n;
+        const uint32_t tile_c_size = tile_p;
         const uint32_t tiled_m = (gemmArgs->m / tile_r_size) + (gemmArgs->m % tile_r_size != 0);
         const uint32_t tiled_p = (gemmArgs->p / tile_c_size) + (gemmArgs->p % tile_c_size != 0);
         ctx.dispatch(gemmArgs->b, tiled_m, tiled_p);

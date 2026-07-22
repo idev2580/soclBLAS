@@ -13,14 +13,15 @@ namespace soclblas{
         uint32_t p;
         float alpha;
         float beta;
-        uint32_t flags;
-
-        void setFlags(bool a_transposed, bool b_transposed, bool c_transposed){
-            flags = 0;
-            if(a_transposed) flags |= 1;
-            if(b_transposed) flags |= 2;
-            if(c_transposed) flags |= 4;
-        }
+        uint32_t a_stride;
+        uint32_t b_stride;
+        uint32_t c_stride;
+        uint32_t a_m_stride;
+        uint32_t a_n_stride;
+        uint32_t b_n_stride;
+        uint32_t b_p_stride;
+        uint32_t c_m_stride;
+        uint32_t c_p_stride;
     };
 
     class Gemm: public Operator{
@@ -31,7 +32,7 @@ namespace soclblas{
 
         uint32_t tile_m;
         uint32_t tile_n;
-        uint32_t tile_k;
+        uint32_t tile_p;
 
         public:
         Gemm(
@@ -39,7 +40,7 @@ namespace soclblas{
             std::span<const uint32_t> shaderBytecodes,
             uint32_t tile_m = 8,
             uint32_t tile_n = 4,
-            uint32_t tile_k = 4
+            uint32_t tile_p = 4
         );
         virtual void execute(
             std::span<socl::Buffer> inputs,

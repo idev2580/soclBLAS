@@ -10,7 +10,7 @@ include(FetchContent)
 FetchContent_Declare(
   socl
   GIT_REPOSITORY https://github.com/idev2580/socl.git
-  GIT_TAG        v0.0.7
+  GIT_TAG        v0.0.8
 )
 FetchContent_MakeAvailable(socl)
 
