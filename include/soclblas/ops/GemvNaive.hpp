@@ -1,12 +1,12 @@
 #pragma once
 #include "socl/Buffer.hpp"
 #include "socl/Context.hpp"
-#include <soclblas/ops/Gemm.hpp>
+#include <soclblas/ops/Gemv.hpp>
 
 namespace soclblas{
-    class GemmNaiveFP32: public Gemm{
+    class GemvNaiveFP32: public Gemv{
         public:
-        GemmNaiveFP32(
+        GemvNaiveFP32(
             socl::Context& ctx,
             uint32_t tile_m,
             uint32_t tile_n,
