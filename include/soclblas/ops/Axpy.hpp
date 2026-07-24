@@ -6,6 +6,7 @@
 #include <soclblas/ops/Operator.hpp>
 
 namespace soclblas{
+    // TODO: For broadcasted operations, elementwise operators should also need to support strided operation.
     struct AxpyArguments{
         uint32_t n;
         float alpha;
