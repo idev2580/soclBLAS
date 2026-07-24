@@ -439,6 +439,93 @@ TEST(GemmOutPlaceNaiveTest, BasicAssertion){
     }
 }
 
+TEST(GemmOutPlaceNaiveTest, SupportsDistinctOutputStride){
+    socl::Context ctx;
+    soclblas::GemmOutPlaceNaiveFP32 gemm(ctx, 8, 4, 4);
+
+    const uint32_t batch = 2;
+    const uint32_t m = 3;
+    const uint32_t n = 4;
+    const uint32_t p = 2;
+    const uint32_t out_p_stride = 1;
+    const uint32_t out_m_stride = p + 2;
+    const uint32_t out_c_stride = m * out_m_stride;
+    const float alpha = 1.25f;
+    const float beta = 0.5f;
+    const float sentinel = -777.0f;
+
+    std::vector<float> a(batch * m * n, 0.0f);
+    std::vector<float> b(batch * n * p, 0.0f);
+    std::vector<float> c(batch * m * p, 0.0f);
+    std::vector<float> original_c(batch * m * p, 0.0f);
+    std::vector<float> cpu_c(batch * m * p, 0.0f);
+    std::vector<float> out_c(batch * out_c_stride, sentinel);
+    std::vector<float> expected_out_c(batch * out_c_stride, sentinel);
+
+    for(uint64_t i=0; i < a.size(); i++){
+        a[i] = float(i % 11) * 0.1f + 0.25f;
+    }
+    for(uint64_t i=0; i < b.size(); i++){
+        b[i] = float(i % 7) * 0.2f + 0.1f;
+    }
+    for(uint64_t i=0; i < c.size(); i++){
+        c[i] = float(i % 5) * 0.15f + 0.05f;
+        original_c[i] = c[i];
+        cpu_c[i] = c[i];
+    }
+
+    SimpleBLAS::gemm(false, false, alpha, beta, batch, m, n, p, a, b, cpu_c);
+    for(uint32_t batch_id=0; batch_id < batch; batch_id++){
+        for(uint32_t r=0; r < m; r++){
+            for(uint32_t col=0; col < p; col++){
+                const uint64_t compact_idx =
+                    uint64_t(batch_id) * m * p + uint64_t(r) * p + col;
+                const uint64_t out_idx =
+                    uint64_t(batch_id) * out_c_stride + uint64_t(r) * out_m_stride + col * out_p_stride;
+                expected_out_c[out_idx] = cpu_c[compact_idx];
+            }
+        }
+    }
+
+    auto bufferA = ctx.createBuffer(sizeof(float) * a.size(), socl::BufferType::Auto);
+    auto bufferB = ctx.createBuffer(sizeof(float) * b.size(), socl::BufferType::Auto);
+    auto bufferC = ctx.createBuffer(sizeof(float) * c.size(), socl::BufferType::Auto);
+    auto bufferOutC = ctx.createBuffer(sizeof(float) * out_c.size(), socl::BufferType::Auto);
+
+    bufferA.write(a.data(), sizeof(float) * a.size());
+    bufferB.write(b.data(), sizeof(float) * b.size());
+    bufferC.write(c.data(), sizeof(float) * c.size());
+    bufferOutC.write(out_c.data(), sizeof(float) * out_c.size());
+
+    soclblas::GemmOutPlaceArguments gemm_args = soclblas::GemmOutPlaceArguments::sameOutputLayout({
+        .b = batch,
+        .m = m,
+        .n = n,
+        .p = p,
+        .alpha = alpha,
+        .beta = beta,
+        .a_stride = m * n,
+        .b_stride = n * p,
+        .c_stride = m * p,
+        .a_m_stride = n,
+        .a_n_stride = 1,
+        .b_n_stride = p,
+        .b_p_stride = 1,
+        .c_m_stride = p,
+        .c_p_stride = 1
+    });
+    gemm_args.out_c_stride = out_c_stride;
+    gemm_args.out_c_m_stride = out_m_stride;
+    gemm_args.out_c_p_stride = out_p_stride;
+
+    gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args);
+    bufferOutC.read(out_c.data(), sizeof(float) * out_c.size());
+    bufferC.read(c.data(), sizeof(float) * c.size());
+
+    EXPECT_TRUE(is_equal_tensor(out_c, expected_out_c));
+    EXPECT_TRUE(is_equal_tensor(c, original_c));
+}
+
 TEST(GemvOutPlaceNaiveTest, BasicAssertion){
     socl::Context ctx;
     soclblas::GemvOutPlaceNaiveFP32 gemv(ctx, 8, 4, 4);
@@ -514,6 +601,87 @@ TEST(GemvOutPlaceNaiveTest, BasicAssertion){
             break;
         }
     }
+}
+
+TEST(GemvOutPlaceNaiveTest, SupportsDistinctOutputStride){
+    socl::Context ctx;
+    soclblas::GemvOutPlaceNaiveFP32 gemv(ctx, 8, 4, 4);
+
+    const uint32_t batch = 3;
+    const uint32_t m = 4;
+    const uint32_t n = 3;
+    const uint32_t out_y_m_stride = 2;
+    const uint32_t out_y_b_stride = m * out_y_m_stride + 3;
+    const float alpha = 0.75f;
+    const float beta = 0.25f;
+    const float sentinel = -333.0f;
+
+    const uint64_t out_y_size =
+        uint64_t(batch - 1) * out_y_b_stride + uint64_t(m - 1) * out_y_m_stride + 1;
+
+    std::vector<float> a(m * n, 0.0f);
+    std::vector<float> x(batch * n, 0.0f);
+    std::vector<float> y(batch * m, 0.0f);
+    std::vector<float> original_y(batch * m, 0.0f);
+    std::vector<float> cpu_y(batch * m, 0.0f);
+    std::vector<float> out_y(out_y_size, sentinel);
+    std::vector<float> expected_out_y(out_y_size, sentinel);
+
+    for(uint64_t i=0; i < a.size(); i++){
+        a[i] = float(i % 9) * 0.11f + 0.2f;
+    }
+    for(uint64_t i=0; i < x.size(); i++){
+        x[i] = float(i % 6) * 0.17f + 0.05f;
+    }
+    for(uint64_t i=0; i < y.size(); i++){
+        y[i] = float(i % 4) * 0.13f + 0.07f;
+        original_y[i] = y[i];
+        cpu_y[i] = y[i];
+    }
+
+    soclblas::GemvArguments gemv_args = {
+        .b = batch,
+        .m = m,
+        .n = n,
+        .alpha = alpha,
+        .beta = beta,
+        .a_m_stride = n,
+        .a_n_stride = 1,
+        .x_n_stride = 1,
+        .x_b_stride = n,
+        .y_m_stride = 1,
+        .y_b_stride = m
+    };
+    run_cpu_gemv(gemv_args, a, x, cpu_y);
+
+    for(uint32_t batch_id=0; batch_id < batch; batch_id++){
+        for(uint32_t r=0; r < m; r++){
+            const uint64_t compact_idx = uint64_t(batch_id) * m + r;
+            const uint64_t out_idx = uint64_t(batch_id) * out_y_b_stride + uint64_t(r) * out_y_m_stride;
+            expected_out_y[out_idx] = cpu_y[compact_idx];
+        }
+    }
+
+    auto bufferA = ctx.createBuffer(sizeof(float) * a.size(), socl::BufferType::Auto);
+    auto bufferX = ctx.createBuffer(sizeof(float) * x.size(), socl::BufferType::Auto);
+    auto bufferY = ctx.createBuffer(sizeof(float) * y.size(), socl::BufferType::Auto);
+    auto bufferOutY = ctx.createBuffer(sizeof(float) * out_y.size(), socl::BufferType::Auto);
+
+    bufferA.write(a.data(), sizeof(float) * a.size());
+    bufferX.write(x.data(), sizeof(float) * x.size());
+    bufferY.write(y.data(), sizeof(float) * y.size());
+    bufferOutY.write(out_y.data(), sizeof(float) * out_y.size());
+
+    soclblas::GemvOutPlaceArguments gemv_out_args = soclblas::GemvOutPlaceArguments::sameOutputLayout(gemv_args);
+    gemv_out_args.out_y_m_stride = out_y_m_stride;
+    gemv_out_args.out_y_b_stride = out_y_b_stride;
+
+    gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_out_args);
+    bufferOutY.read(out_y.data(), sizeof(float) * out_y.size());
+    bufferY.read(y.data(), sizeof(float) * y.size());
+
+    EXPECT_TRUE(is_equal_tensor(out_y, expected_out_y));
+    EXPECT_TRUE(is_equal_tensor(y, original_y));
 }
 
 TEST(MatMulNaiveTest, BasicAssertion){

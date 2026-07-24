@@ -45,6 +45,9 @@ layout( push_constant ) uniform constants {
     uint b_p_stride;
     uint c_m_stride;
     uint c_p_stride;
+    uint out_c_stride;
+    uint out_c_m_stride;
+    uint out_c_p_stride;
 } args;
 
 
@@ -58,6 +61,10 @@ uint get_b_idx(uint batch_id, uint r, uint col) {
 
 uint get_c_idx(uint batch_id, uint r, uint col) {
     return batch_id * args.c_stride + r * args.c_m_stride + col * args.c_p_stride;
+}
+
+uint get_out_c_idx(uint batch_id, uint r, uint col) {
+    return batch_id * args.out_c_stride + r * args.out_c_m_stride + col * args.out_c_p_stride;
 }
 
 void main() {
@@ -129,6 +136,7 @@ void main() {
 
     if (global_m < args.m && global_p < args.p) {
         const uint c_idx = get_c_idx(batch_id, global_m, global_p);
-        d[c_idx] = fma(args.alpha, acc, args.beta * c[c_idx]);
+        const uint out_c_idx = get_out_c_idx(batch_id, global_m, global_p);
+        d[out_c_idx] = fma(args.alpha, acc, args.beta * c[c_idx]);
     }
 }

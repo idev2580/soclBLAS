@@ -19,8 +19,19 @@ namespace soclblas{
         const void* args,
         std::size_t argsSize
     ){
-        GemmArguments m_args = convertGemvToGemm(*(GemvArguments*)args);
-        gemm.execute(inputs, inouts, outputs, &m_args, sizeof(GemmArguments));
+        GemmOutPlaceArguments m_args = convertGemvToGemm(*(GemvOutPlaceArguments*)args);
+        gemm.execute(inputs, inouts, outputs, &m_args, sizeof(GemmOutPlaceArguments));
+    }
+
+    void GemvOutPlace::operator()(
+        socl::Buffer A,
+        socl::Buffer B,
+        socl::Buffer C,
+        socl::Buffer outC,
+        const GemvOutPlaceArguments& args
+    ){
+        GemmOutPlaceArguments m_args = convertGemvToGemm(args);
+        gemm(A,B,C,outC,m_args);
     }
 
     void GemvOutPlace::operator()(
@@ -30,7 +41,7 @@ namespace soclblas{
         socl::Buffer outC,
         const GemvArguments& args
     ){
-        GemmArguments m_args = convertGemvToGemm(args);
-        gemm(A,B,C,outC,m_args);
+        const GemvOutPlaceArguments outPlaceArgs = GemvOutPlaceArguments::sameOutputLayout(args);
+        (*this)(A, B, C, outC, outPlaceArgs);
     }
 }

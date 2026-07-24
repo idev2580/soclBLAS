@@ -38,6 +38,13 @@ namespace soclblas{
             socl::Buffer B,
             socl::Buffer C,
             socl::Buffer outC,
+            const GemmOutPlaceArguments& args
+        );
+        virtual void operator()(
+            socl::Buffer A,
+            socl::Buffer B,
+            socl::Buffer C,
+            socl::Buffer outC,
             const GemmArguments& args
         );
     };

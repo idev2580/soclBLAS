@@ -17,7 +17,7 @@ namespace soclblas{
                 {2, socl::DescriptorType::StorageBuffer},
                 {3, socl::DescriptorType::StorageBuffer}
             },
-            .pushConstantSize = sizeof(GemmArguments),
+            .pushConstantSize = sizeof(GemmOutPlaceArguments),
             .specConstants = {
                 {0, socl::specConstant(std::uint32_t{tile_m})},
                 {1, socl::specConstant(std::uint32_t{tile_n})},
@@ -45,7 +45,7 @@ namespace soclblas{
         ctx.bind(descSet);
         ctx.push(args, argsSize);
 
-        GemmArguments* gemmArgs = (GemmArguments*)args;
+        GemmOutPlaceArguments* gemmArgs = (GemmOutPlaceArguments*)args;
         const uint32_t tile_r_size = tile_m;
         const uint32_t tile_c_size = tile_p;
         const uint32_t tiled_m = (gemmArgs->m / tile_r_size) + (gemmArgs->m % tile_r_size != 0);
@@ -58,11 +58,22 @@ namespace soclblas{
         socl::Buffer B,
         socl::Buffer C,
         socl::Buffer outC,
-        const GemmArguments& args
+        const GemmOutPlaceArguments& args
     ){
         std::vector<socl::Buffer> inputs = {A, B, C};
         std::vector<socl::Buffer> inouts = {};
         std::vector<socl::Buffer> outputs = {outC};
-        this->execute(inputs, inouts, outputs, &args, sizeof(GemmArguments));
+        this->execute(inputs, inouts, outputs, &args, sizeof(GemmOutPlaceArguments));
+    }
+
+    void GemmOutPlace::operator()(
+        socl::Buffer A,
+        socl::Buffer B,
+        socl::Buffer C,
+        socl::Buffer outC,
+        const GemmArguments& args
+    ){
+        const GemmOutPlaceArguments outPlaceArgs = GemmOutPlaceArguments::sameOutputLayout(args);
+        (*this)(A, B, C, outC, outPlaceArgs);
     }
 }
