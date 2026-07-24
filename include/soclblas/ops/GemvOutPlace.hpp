@@ -1,15 +1,15 @@
 #pragma once
 #include "soclblas/ops/Operator.hpp"
-#include "soclblas/ops/Gemm.hpp"
+#include "soclblas/ops/GemmOutPlace.hpp"
 #include <soclblas/ops/GemvArguments.hpp>
 #include <cstdint>
 
 namespace soclblas{
-    class Gemv: public Operator{
+    class GemvOutPlace: public Operator{
         private:
-        Gemm gemm;
+        GemmOutPlace gemm;
         public:
-        Gemv(
+        GemvOutPlace(
             socl::Context& ctx,
             std::span<const uint32_t> gemmShaderBytecodes,
             uint32_t tile_m = 8,
@@ -28,6 +28,7 @@ namespace soclblas{
             socl::Buffer A,
             socl::Buffer X,
             socl::Buffer Y,
+            socl::Buffer outY,
             const GemvArguments& args
         );
     };

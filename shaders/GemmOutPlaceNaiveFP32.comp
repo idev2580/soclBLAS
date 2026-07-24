@@ -1,0 +1,134 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_shuffle : require
+#extension GL_KHR_shader_subgroup_ballot: enable
+#extension GL_KHR_shader_subgroup_arithmetic: enable
+
+// tile_n <= tile_m and tile_n <= tile_p.
+// tile_m * tile_p == 32 assumed.
+layout(constant_id = 0) const uint tile_m = 8;
+layout(constant_id = 1) const uint tile_n = 4;
+layout(constant_id = 2) const uint tile_p = 4;
+layout(local_size_x_id = 0, local_size_y_id = 2, local_size_z = 1) in;
+
+// c := alpha * A * B + beta * C
+layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
+    float a[];
+};
+
+layout(set = 0, binding = 1) readonly restrict buffer tensor_b {
+    float b[];
+};
+
+layout(set = 0, binding = 2) readonly restrict buffer tensor_c {
+    float c[];
+};
+
+layout(set = 0, binding = 3) writeonly restrict buffer tensor_d{
+    float d[];
+};
+
+layout( push_constant ) uniform constants {
+    uint batch;
+    uint m;
+    uint n;
+    uint p;
+    float alpha;
+    float beta;
+    uint a_stride;
+    uint b_stride;
+    uint c_stride;
+    uint a_m_stride;
+    uint a_n_stride;
+    uint b_n_stride;
+    uint b_p_stride;
+    uint c_m_stride;
+    uint c_p_stride;
+} args;
+
+
+uint get_a_idx(uint batch_id, uint r, uint col) {
+    return batch_id * args.a_stride + r * args.a_m_stride + col * args.a_n_stride;
+}
+
+uint get_b_idx(uint batch_id, uint r, uint col) {
+    return batch_id * args.b_stride + r * args.b_n_stride + col * args.b_p_stride;
+}
+
+uint get_c_idx(uint batch_id, uint r, uint col) {
+    return batch_id * args.c_stride + r * args.c_m_stride + col * args.c_p_stride;
+}
+
+void main() {
+    const uint tiled_m_cnt = (args.m / tile_m) + (args.m % tile_m == 0 ? 0 : 1);
+    const uint tiled_n_cnt = (args.n / tile_n) + (args.n % tile_n == 0 ? 0 : 1);
+    const uint tiled_p_cnt = (args.p / tile_p) + (args.p % tile_p == 0 ? 0 : 1);
+
+    const uint batch_id = gl_WorkGroupID.x;
+    const uint tile_m_id = gl_WorkGroupID.y;
+    const uint tile_p_id = gl_WorkGroupID.z;
+
+    const uint lane_id = gl_SubgroupInvocationID;
+
+    if (gl_SubgroupID != 0 || lane_id >= tile_m * tile_p) {
+        return;
+    }
+
+    const uint local_m = lane_id % tile_m; // 0 .. TILE_M - 1
+    const uint local_p = lane_id / tile_m; // 0 .. TILE_P - 1
+
+    const uint global_m = tile_m_id * tile_m + local_m;
+    const uint global_p = tile_p_id * tile_p + local_p;
+
+    float acc = 0.0;
+
+    for (uint tile_n_id = 0; tile_n_id < tiled_n_cnt; tile_n_id++) {
+        float a_val = 0.0;
+        float b_val = 0.0;
+
+        // A tile: TILE_M x TILE_N
+        //
+        // Lane (local_m, local_p) loads A[local_m, local_p]
+        // only when local_p < TILE_N.
+        const uint a_r = global_m;
+        const uint a_c = tile_n_id * tile_n + local_p;
+
+        if (local_p < tile_n && a_r < args.m && a_c < args.n) {
+            a_val = a[get_a_idx(batch_id, a_r, a_c)];
+        }
+
+        // B tile: TILE_N x TILE_P
+        //
+        // Lane (local_m, local_p) loads B[local_m, local_p]
+        // only when local_m < TILE_N.
+        const uint b_r = tile_n_id * tile_n + local_m;
+        const uint b_c = global_p;
+
+        if (local_m < tile_n && b_r < args.n && b_c < args.p) {
+            b_val = b[get_b_idx(batch_id, b_r, b_c)];
+        }
+
+        // Dot product for C[global_m, global_p].
+        for (uint n_offset = 0; n_offset < tile_n; n_offset++) {
+            // Subgroup lane index:
+            // lane = m + p * TILE_M
+            //
+            // A[local_m, n_offset] is held by lane (local_m, n_offset).
+            const uint a_lane = local_m + n_offset * tile_m;
+
+            // B[n_offset, local_p] is held by lane (n_offset, local_p).
+            const uint b_lane = n_offset + local_p * tile_m;
+
+            const float av = subgroupShuffle(a_val, a_lane);
+            const float bv = subgroupShuffle(b_val, b_lane);
+
+            acc += av * bv;
+        }
+    }
+
+    if (global_m < args.m && global_p < args.p) {
+        const uint c_idx = get_c_idx(batch_id, global_m, global_p);
+        d[c_idx] = fma(args.alpha, acc, args.beta * c[c_idx]);
+    }
+}

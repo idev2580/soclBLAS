@@ -4,6 +4,9 @@
 #include <memory>
 #include <random>
 #include <soclblas/ops/GemmNaive.hpp>
+#include <soclblas/ops/GemmOutPlaceNaive.hpp>
+#include <soclblas/ops/GemvNaive.hpp>
+#include <soclblas/ops/GemvOutPlaceNaive.hpp>
 #include <soclblas/ops/MatMulNaive.hpp>
 #include "lib/MinCpuBlas.hpp"
 
@@ -44,6 +47,30 @@ void print_vector(
         }
     }
     printf("]\n");
+}
+
+void run_cpu_gemv(
+    const soclblas::GemvArguments& args,
+    const std::vector<float>& a,
+    const std::vector<float>& x,
+    std::vector<float>& y
+){
+    for(uint32_t batch_id=0; batch_id < args.b; batch_id++){
+        for(uint32_t r=0; r < args.m; r++){
+            float acc = 0.0f;
+            for(uint32_t col=0; col < args.n; col++){
+                const uint64_t a_idx =
+                    uint64_t(r) * args.a_m_stride + uint64_t(col) * args.a_n_stride;
+                const uint64_t x_idx =
+                    uint64_t(col) * args.x_n_stride + uint64_t(batch_id) * args.x_b_stride;
+                acc += a[a_idx] * x[x_idx];
+            }
+
+            const uint64_t y_idx =
+                uint64_t(r) * args.y_m_stride + uint64_t(batch_id) * args.y_b_stride;
+            y[y_idx] = args.alpha * acc + args.beta * y[y_idx];
+        }
+    }
 }
 
 template<typename MatMulOp>
@@ -258,7 +285,237 @@ TEST(GEMMTest, BasicAssertion){
     }
 }
 
+TEST(GemvNaiveTest, BasicAssertion){
+    socl::Context ctx;
+    soclblas::GemvNaiveFP32 gemv(ctx, 8, 4, 4);
+    auto bufferA = ctx.createBuffer(sizeof(float) * max_m * max_n, socl::BufferType::Auto);
+    auto bufferX = ctx.createBuffer(sizeof(float) * max_batch * max_n, socl::BufferType::Auto);
+    auto bufferY = ctx.createBuffer(sizeof(float) * max_batch * max_m, socl::BufferType::Auto);
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> b_dis(1, max_batch);
+    std::uniform_int_distribution<int> m_dis(1, max_m);
+    std::uniform_int_distribution<int> n_dis(1, max_n);
+    std::uniform_real_distribution<float> f_dis(0.0, 1.0);
+    for(int i=0; i < gemm_test_iter; i++){
+        uint32_t batch = b_dis(gen);
+        uint32_t m = m_dis(gen);
+        uint32_t n = n_dis(gen);
+        float alpha = f_dis(gen);
+        float beta = f_dis(gen);
+
+        std::vector<float> a(m * n, 0.0);
+        std::vector<float> x(batch * n, 0.0);
+        std::vector<float> y(batch * m, 0.0);
+        std::vector<float> cpu_y(batch * m, 0.0);
+
+        const bool is_a_trans = f_dis(gen) > 0.5f;
+
+        for(uint64_t j=0; j < m * n; j++){
+            a[j] = f_dis(gen);
+        }
+        for(uint64_t j=0; j < batch * n; j++){
+            x[j] = f_dis(gen);
+        }
+        for(uint64_t j=0; j < batch * m; j++){
+            float ry = f_dis(gen);
+            y[j] = ry;
+            cpu_y[j] = ry;
+        }
+
+        bufferA.write(a.data(), sizeof(float) * m * n);
+        bufferX.write(x.data(), sizeof(float) * batch * n);
+        bufferY.write(y.data(), sizeof(float) * batch * m);
+        soclblas::GemvArguments gemv_args = {
+            .b = batch,
+            .m = m,
+            .n = n,
+            .alpha = alpha,
+            .beta = beta,
+            .a_m_stride = is_a_trans ? 1 : n,
+            .a_n_stride = is_a_trans ? m : 1,
+            .x_n_stride = 1,
+            .x_b_stride = n,
+            .y_m_stride = 1,
+            .y_b_stride = m
+        };
+        run_cpu_gemv(gemv_args, a, x, cpu_y);
+
+        gemv(bufferA, bufferX, bufferY, gemv_args);
+        bufferY.read(y.data(), sizeof(float) * batch * m);
+
+        const bool gemv_res = is_equal_tensor(y, cpu_y);
+        EXPECT_TRUE(gemv_res) << "GemvNaiveFP32 result is not equal to CPU result!";
+        if(!gemv_res){
+            printf("Transposed(A:%d)\n", is_a_trans ? 1 : 0);
+            break;
+        }
+    }
+}
+
+TEST(GemmOutPlaceNaiveTest, BasicAssertion){
+    socl::Context ctx;
+    soclblas::GemmOutPlaceNaiveFP32 gemm(ctx, 8, 4, 4);
+    auto bufferA = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_n, socl::BufferType::Auto);
+    auto bufferB = ctx.createBuffer(sizeof(float) * max_batch * max_n * max_p, socl::BufferType::Auto);
+    auto bufferC = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_p, socl::BufferType::Auto);
+    auto bufferOutC = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_p, socl::BufferType::Auto);
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> b_dis(1, max_batch);
+    std::uniform_int_distribution<int> m_dis(1, max_m);
+    std::uniform_int_distribution<int> n_dis(1, max_n);
+    std::uniform_int_distribution<int> p_dis(1, max_p);
+    std::uniform_real_distribution<float> f_dis(0.0, 1.0);
+    for(int i=0; i < gemm_test_iter; i++){
+        uint32_t batch = b_dis(gen);
+        uint32_t m = m_dis(gen);
+        uint32_t n = n_dis(gen);
+        uint32_t p = p_dis(gen);
+        float alpha = f_dis(gen);
+        float beta = f_dis(gen);
+
+        std::vector<float> a(batch * m * n, 0.0);
+        std::vector<float> b(batch * n * p, 0.0);
+        std::vector<float> c(batch * m * p, 0.0);
+        std::vector<float> out_c(batch * m * p, 0.0);
+        std::vector<float> cpu_c(batch * m * p, 0.0);
+        std::vector<float> original_c(batch * m * p, 0.0);
+
+        const bool is_a_trans = f_dis(gen) > 0.5f;
+        const bool is_b_trans = f_dis(gen) > 0.5f;
+        const bool is_c_trans = false;
+
+        for(uint64_t j=0; j < batch * m * n; j++){
+            a[j] = f_dis(gen);
+        }
+        for(uint64_t j=0; j < batch * n * p; j++){
+            b[j] = f_dis(gen);
+        }
+        for(uint64_t j=0; j < batch * m * p; j++){
+            float rc = f_dis(gen);
+            c[j] = rc;
+            cpu_c[j] = rc;
+            original_c[j] = rc;
+        }
+
+        SimpleBLAS::gemm(is_a_trans, is_b_trans, alpha, beta, batch, m, n, p, a, b, cpu_c);
+
+        bufferA.write(a.data(), sizeof(float) * batch * m * n);
+        bufferB.write(b.data(), sizeof(float) * batch * n * p);
+        bufferC.write(c.data(), sizeof(float) * batch * m * p);
+        bufferOutC.write(out_c.data(), sizeof(float) * batch * m * p);
+        soclblas::GemmArguments gemm_args = {
+            .b = batch,
+            .m = m,
+            .n = n,
+            .p = p,
+            .alpha = alpha,
+            .beta = beta,
+            .a_stride = m * n,
+            .b_stride = n * p,
+            .c_stride = m * p,
+            .a_m_stride = is_a_trans ? 1 : n,
+            .a_n_stride = is_a_trans ? m : 1,
+            .b_n_stride = is_b_trans ? 1 : p,
+            .b_p_stride = is_b_trans ? n : 1,
+            .c_m_stride = is_c_trans ? 1 : p,
+            .c_p_stride = is_c_trans ? m : 1
+        };
+        gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args);
+        bufferOutC.read(out_c.data(), sizeof(float) * batch * m * p);
+        bufferC.read(c.data(), sizeof(float) * batch * m * p);
+
+        const bool gemm_res = is_equal_tensor(out_c, cpu_c);
+        const bool input_c_res = is_equal_tensor(c, original_c);
+        EXPECT_TRUE(gemm_res) << "GemmOutPlaceNaiveFP32 result is not equal to CPU result!";
+        EXPECT_TRUE(input_c_res) << "GemmOutPlaceNaiveFP32 modified input C!";
+        if(!gemm_res || !input_c_res){
+            printf("Transposed(A:%d, B:%d)\n", is_a_trans ? 1 : 0, is_b_trans ? 1 : 0);
+            break;
+        }
+    }
+}
+
+TEST(GemvOutPlaceNaiveTest, BasicAssertion){
+    socl::Context ctx;
+    soclblas::GemvOutPlaceNaiveFP32 gemv(ctx, 8, 4, 4);
+    auto bufferA = ctx.createBuffer(sizeof(float) * max_m * max_n, socl::BufferType::Auto);
+    auto bufferX = ctx.createBuffer(sizeof(float) * max_batch * max_n, socl::BufferType::Auto);
+    auto bufferY = ctx.createBuffer(sizeof(float) * max_batch * max_m, socl::BufferType::Auto);
+    auto bufferOutY = ctx.createBuffer(sizeof(float) * max_batch * max_m, socl::BufferType::Auto);
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> b_dis(1, max_batch);
+    std::uniform_int_distribution<int> m_dis(1, max_m);
+    std::uniform_int_distribution<int> n_dis(1, max_n);
+    std::uniform_real_distribution<float> f_dis(0.0, 1.0);
+    for(int i=0; i < gemm_test_iter; i++){
+        uint32_t batch = b_dis(gen);
+        uint32_t m = m_dis(gen);
+        uint32_t n = n_dis(gen);
+        float alpha = f_dis(gen);
+        float beta = f_dis(gen);
+
+        std::vector<float> a(m * n, 0.0);
+        std::vector<float> x(batch * n, 0.0);
+        std::vector<float> y(batch * m, 0.0);
+        std::vector<float> out_y(batch * m, 0.0);
+        std::vector<float> cpu_y(batch * m, 0.0);
+        std::vector<float> original_y(batch * m, 0.0);
+
+        const bool is_a_trans = f_dis(gen) > 0.5f;
+
+        for(uint64_t j=0; j < m * n; j++){
+            a[j] = f_dis(gen);
+        }
+        for(uint64_t j=0; j < batch * n; j++){
+            x[j] = f_dis(gen);
+        }
+        for(uint64_t j=0; j < batch * m; j++){
+            float ry = f_dis(gen);
+            y[j] = ry;
+            cpu_y[j] = ry;
+            original_y[j] = ry;
+        }
+
+        bufferA.write(a.data(), sizeof(float) * m * n);
+        bufferX.write(x.data(), sizeof(float) * batch * n);
+        bufferY.write(y.data(), sizeof(float) * batch * m);
+        bufferOutY.write(out_y.data(), sizeof(float) * batch * m);
+        soclblas::GemvArguments gemv_args = {
+            .b = batch,
+            .m = m,
+            .n = n,
+            .alpha = alpha,
+            .beta = beta,
+            .a_m_stride = is_a_trans ? 1 : n,
+            .a_n_stride = is_a_trans ? m : 1,
+            .x_n_stride = 1,
+            .x_b_stride = n,
+            .y_m_stride = 1,
+            .y_b_stride = m
+        };
+        run_cpu_gemv(gemv_args, a, x, cpu_y);
+
+        gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_args);
+        bufferOutY.read(out_y.data(), sizeof(float) * batch * m);
+        bufferY.read(y.data(), sizeof(float) * batch * m);
+
+        const bool gemv_res = is_equal_tensor(out_y, cpu_y);
+        const bool input_y_res = is_equal_tensor(y, original_y);
+        EXPECT_TRUE(gemv_res) << "GemvOutPlaceNaiveFP32 result is not equal to CPU result!";
+        EXPECT_TRUE(input_y_res) << "GemvOutPlaceNaiveFP32 modified input Y!";
+        if(!gemv_res || !input_y_res){
+            printf("Transposed(A:%d)\n", is_a_trans ? 1 : 0);
+            break;
+        }
+    }
+}
+
 TEST(MatMulNaiveTest, BasicAssertion){
     run_matmul_test<soclblas::MatMulNaiveFP32>("MatMulNaiveFP32");
 }
-

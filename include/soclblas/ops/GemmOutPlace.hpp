@@ -7,7 +7,7 @@
 #include <soclblas/ops/GemmArguments.hpp>
 
 namespace soclblas{
-    class Gemm: public Operator{
+    class GemmOutPlace: public Operator{
         private:
         socl::Context& ctx;
         socl::ShaderPipeline pipeline;
@@ -18,7 +18,7 @@ namespace soclblas{
         uint32_t tile_p;
 
         public:
-        Gemm(
+        GemmOutPlace(
             socl::Context& ctx,
             std::span<const uint32_t> shaderBytecodes,
             uint32_t tile_m = 8,
@@ -37,6 +37,7 @@ namespace soclblas{
             socl::Buffer A,
             socl::Buffer B,
             socl::Buffer C,
+            socl::Buffer outC,
             const GemmArguments& args
         );
     };

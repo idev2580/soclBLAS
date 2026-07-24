@@ -1,9 +1,9 @@
 #include "soclblas/ops/GemvArguments.hpp"
-#include <soclblas/ops/Gemv.hpp>
-#include <soclblas/ops/Gemm.hpp>
+#include <soclblas/ops/GemvOutPlace.hpp>
+#include <soclblas/ops/GemmOutPlace.hpp>
 
 namespace soclblas{
-    Gemv::Gemv(
+    GemvOutPlace::GemvOutPlace(
         socl::Context& ctx,
         std::span<const uint32_t> gemmShaderBytecodes,
         uint32_t tile_m,
@@ -12,7 +12,7 @@ namespace soclblas{
     ):gemm(
         ctx, gemmShaderBytecodes, tile_m, tile_n, tile_p
     ){}
-    void Gemv::execute(
+    void GemvOutPlace::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -23,13 +23,14 @@ namespace soclblas{
         gemm.execute(inputs, inouts, outputs, &m_args, sizeof(GemmArguments));
     }
 
-    void Gemv::operator()(
+    void GemvOutPlace::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
+        socl::Buffer outC,
         const GemvArguments& args
     ){
         GemmArguments m_args = convertGemvToGemm(args);
-        gemm(A,B,C,m_args);
+        gemm(A,B,C,outC,m_args);
     }
 }

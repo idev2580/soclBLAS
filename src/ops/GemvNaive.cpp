@@ -1,4 +1,3 @@
-#include <soclblas/ops/Gemv.hpp>
 #include <soclblas/ops/GemvNaive.hpp>
 #include <GemmNaiveFP32_SPIRV>
 
