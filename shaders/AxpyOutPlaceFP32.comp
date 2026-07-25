@@ -3,9 +3,10 @@
 layout(constant_id = 0) const uint thread_num = 64;
 layout(local_size_y_id = 0) in;
 
-// B := alpha*A + B
+// outB := alpha*A + B
 layout(set=0, binding=0) readonly restrict buffer tensor_a{float a[];};
-layout(set=0, binding=1) buffer restrict tensor_b{float b[];};
+layout(set=0, binding=1) readonly restrict buffer tensor_b{float b[];};
+layout(set=0, binding=2) writeonly restrict buffer tensor_out_b{float out_b[];};
 layout( push_constant ) uniform constants {
     uint b;
     uint n;
@@ -14,6 +15,8 @@ layout( push_constant ) uniform constants {
     uint a_n_stride;
     uint b_b_stride;
     uint b_n_stride;
+    uint out_b_b_stride;
+    uint out_b_n_stride;
 } args;
 
 uint get_a_idx(uint b, uint n){
@@ -22,11 +25,15 @@ uint get_a_idx(uint b, uint n){
 uint get_b_idx(uint b, uint n){
     return b * args.b_b_stride + n * args.b_n_stride;
 }
+uint get_out_b_idx(uint b, uint n){
+    return b * args.out_b_b_stride + n * args.out_b_n_stride;
+}
 
 void main(){
     const uint bi = gl_GlobalInvocationID.x;
     const uint i = gl_GlobalInvocationID.y;
     if(i < args.n){
-        b[get_b_idx(bi,i)] = fma(args.alpha, a[get_a_idx(bi,i)], b[get_b_idx(bi,i)]);
+        out_b[get_out_b_idx(bi,i)] =
+            fma(args.alpha, a[get_a_idx(bi,i)], b[get_b_idx(bi,i)]);
     }
 }

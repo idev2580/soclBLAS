@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <random>
+#include <soclblas/ops/AxpyOutPlace.hpp>
 #include <soclblas/ops/GemmNaive.hpp>
 #include <soclblas/ops/GemmOutPlaceNaive.hpp>
 #include <soclblas/ops/GemvNaive.hpp>
@@ -71,6 +72,77 @@ void run_cpu_gemv(
             y[y_idx] = args.alpha * acc + args.beta * y[y_idx];
         }
     }
+}
+
+TEST(AxpyOutPlaceTest, SupportsBatchAndDistinctStrides){
+    socl::Context ctx;
+    soclblas::AxpyOutPlace axpy(ctx);
+
+    const uint32_t batch = 3;
+    const uint32_t n = 5;
+    const uint32_t a_n_stride = 2;
+    const uint32_t a_b_stride = n * a_n_stride + 3;
+    const uint32_t b_n_stride = 3;
+    const uint32_t b_b_stride = n * b_n_stride + 2;
+    const uint32_t out_b_n_stride = 2;
+    const uint32_t out_b_b_stride = n * out_b_n_stride + 4;
+    const float alpha = 1.25f;
+    const float sentinel = -999.0f;
+
+    const uint64_t a_size =
+        uint64_t(batch - 1) * a_b_stride + uint64_t(n - 1) * a_n_stride + 1;
+    const uint64_t b_size =
+        uint64_t(batch - 1) * b_b_stride + uint64_t(n - 1) * b_n_stride + 1;
+    const uint64_t out_b_size =
+        uint64_t(batch - 1) * out_b_b_stride + uint64_t(n - 1) * out_b_n_stride + 1;
+
+    std::vector<float> a(a_size, sentinel);
+    std::vector<float> b(b_size, sentinel);
+    std::vector<float> original_b(b_size, sentinel);
+    std::vector<float> out_b(out_b_size, sentinel);
+    std::vector<float> expected_out_b(out_b_size, sentinel);
+
+    for(uint32_t batch_id=0; batch_id < batch; batch_id++){
+        for(uint32_t i=0; i < n; i++){
+            const uint64_t a_idx =
+                uint64_t(batch_id) * a_b_stride + uint64_t(i) * a_n_stride;
+            const uint64_t b_idx =
+                uint64_t(batch_id) * b_b_stride + uint64_t(i) * b_n_stride;
+            const uint64_t out_b_idx =
+                uint64_t(batch_id) * out_b_b_stride + uint64_t(i) * out_b_n_stride;
+            a[a_idx] = float(batch_id * n + i) * 0.2f + 0.1f;
+            b[b_idx] = float(batch_id * n + i) * 0.15f + 0.05f;
+            expected_out_b[out_b_idx] = alpha * a[a_idx] + b[b_idx];
+        }
+    }
+    original_b = b;
+
+    auto bufferA = ctx.createBuffer(sizeof(float) * a.size(), socl::BufferType::Auto);
+    auto bufferB = ctx.createBuffer(sizeof(float) * b.size(), socl::BufferType::Auto);
+    auto bufferOutB = ctx.createBuffer(sizeof(float) * out_b.size(), socl::BufferType::Auto);
+
+    bufferA.write(a.data(), sizeof(float) * a.size());
+    bufferB.write(b.data(), sizeof(float) * b.size());
+    bufferOutB.write(out_b.data(), sizeof(float) * out_b.size());
+
+    soclblas::AxpyOutPlaceArguments args = {
+        .b = batch,
+        .n = n,
+        .alpha = alpha,
+        .a_b_stride = a_b_stride,
+        .a_n_stride = a_n_stride,
+        .b_b_stride = b_b_stride,
+        .b_n_stride = b_n_stride,
+        .out_b_b_stride = out_b_b_stride,
+        .out_b_n_stride = out_b_n_stride
+    };
+
+    axpy(bufferA, bufferB, bufferOutB, args);
+    bufferB.read(b.data(), sizeof(float) * b.size());
+    bufferOutB.read(out_b.data(), sizeof(float) * out_b.size());
+
+    EXPECT_TRUE(is_equal_tensor(out_b, expected_out_b));
+    EXPECT_TRUE(is_equal_tensor(b, original_b));
 }
 
 template<typename MatMulOp>

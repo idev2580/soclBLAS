@@ -4,6 +4,7 @@ file(GLOB GEN_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/generated/*.comp")
 set(
     MANUAL_SHADERS
     "${CMAKE_CURRENT_SOURCE_DIR}/AxpyFP32.comp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AxpyOutPlaceFP32.comp"
     # "${CMAKE_SOURCE_DIR}/shaders/GemvNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmOutPlaceNaiveFP32.comp"

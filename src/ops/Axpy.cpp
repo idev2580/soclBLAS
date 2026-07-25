@@ -12,7 +12,6 @@ namespace soclblas{
             .bindings = {
                 {0, socl::DescriptorType::StorageBuffer},
                 {1, socl::DescriptorType::StorageBuffer},
-                {2, socl::DescriptorType::StorageBuffer},
             },
             .pushConstantSize = sizeof(AxpyArguments),
             .specConstants = {
@@ -28,10 +27,8 @@ namespace soclblas{
         const void* args,
         std::size_t argsSize
     ){
-        // Implement the forward pass of GEMM operation
         this->descSet.bindBuffer(0, inputs[0]);
-        this->descSet.bindBuffer(1, inputs[1]);
-        this->descSet.bindBuffer(2, inouts[0]);
+        this->descSet.bindBuffer(1, inouts[0]);
         this->descSet.update();
 
         ctx.begin();
@@ -41,17 +38,16 @@ namespace soclblas{
 
         AxpyArguments* axpyArgs = (AxpyArguments*)args;
         const uint32_t group_cnt = axpyArgs->n / thread_num + (axpyArgs->n % thread_num == 0 ? 0 : 1);
-        ctx.dispatch(group_cnt, 1, 1);
+        ctx.dispatch(axpyArgs->b, group_cnt, 1);
         ctx.submitAndWait();
     }
     void Axpy::operator()(
         socl::Buffer A,
         socl::Buffer B,
-        socl::Buffer C,
         const AxpyArguments& args
     ){
-        std::vector<socl::Buffer> inputs = {A, B};
-        std::vector<socl::Buffer> inouts = {C};
+        std::vector<socl::Buffer> inputs = {A};
+        std::vector<socl::Buffer> inouts = {B};
         std::vector<socl::Buffer> outputs = {};
         this->execute(inputs, inouts, outputs, &args, sizeof(AxpyArguments));
     }
