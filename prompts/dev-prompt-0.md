@@ -18,6 +18,9 @@ Follow-up correction:
 Follow-up test request:
 - Add simple tests for reduction operations only.
 
+Follow-up test clarification:
+- Add DotProduct coverage as well because dot product is also a reduction operation.
+
 ## What To Implement
 - Add/complete the naive dot product operator.
 - Add/complete naive reduction operators for maximum, minimum, average, and sum.
@@ -25,6 +28,7 @@ Follow-up test request:
 - Implement shader reductions with subgroup features instead of shared-memory 256-thread reductions.
 - Review shader identifiers for GLSL keyword conflicts.
 - Add simple coverage for `MaxNaive`, `MinNaive`, `AvgNaive`, and `SumNaive`.
+- Add simple coverage for `DotProductNaive`.
 
 ## How To Implement
 - Follow the existing soclBLAS operator patterns and naming conventions.

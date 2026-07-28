@@ -4,6 +4,7 @@
 #include <memory>
 #include <random>
 #include <soclblas/ops/AxpyOutPlace.hpp>
+#include <soclblas/ops/DotProductNaive.hpp>
 #include <soclblas/ops/GemmNaive.hpp>
 #include <soclblas/ops/GemmOutPlaceNaive.hpp>
 #include <soclblas/ops/GemvNaive.hpp>
@@ -755,6 +756,81 @@ TEST(GemvOutPlaceNaiveTest, SupportsDistinctOutputStride){
 
     EXPECT_TRUE(is_equal_tensor(out_y, expected_out_y));
     EXPECT_TRUE(is_equal_tensor(y, original_y));
+}
+
+TEST(ReductionNaiveTest, ComputesDotProductWithBatchStrides){
+    socl::Context ctx;
+    soclblas::DotProductNaive dot(ctx);
+
+    constexpr uint32_t batch = 2;
+    constexpr uint32_t n = 5;
+    const uint32_t a_n_stride = 2;
+    const uint32_t a_b_stride = n * a_n_stride + 3;
+    const uint32_t b_n_stride = 3;
+    const uint32_t b_b_stride = n * b_n_stride + 2;
+    const uint32_t out_b_stride = 2;
+    const uint32_t out_n_stride = 1;
+    const float sentinel = -777.0f;
+
+    const uint64_t a_size =
+        uint64_t(batch - 1) * a_b_stride + uint64_t(n - 1) * a_n_stride + 1;
+    const uint64_t b_size =
+        uint64_t(batch - 1) * b_b_stride + uint64_t(n - 1) * b_n_stride + 1;
+    const uint64_t out_size = uint64_t(batch - 1) * out_b_stride + 1;
+
+    std::vector<float> a(a_size, sentinel);
+    std::vector<float> b(b_size, sentinel);
+    std::vector<float> out(out_size, sentinel);
+    std::vector<float> expected_out(out_size, sentinel);
+
+    const float a_values[batch][n] = {
+        {1.0f, -2.0f, 3.5f, 4.0f, -1.0f},
+        {-3.0f, 7.0f, 2.0f, -5.0f, 9.0f}
+    };
+    const float b_values[batch][n] = {
+        {0.5f, 3.0f, -2.0f, 1.5f, 8.0f},
+        {2.0f, -1.0f, 4.0f, -3.0f, 0.25f}
+    };
+
+    for(uint32_t batch_id=0; batch_id < batch; batch_id++){
+        float acc = 0.0f;
+        for(uint32_t i=0; i < n; i++){
+            const uint64_t a_idx =
+                uint64_t(batch_id) * a_b_stride + uint64_t(i) * a_n_stride;
+            const uint64_t b_idx =
+                uint64_t(batch_id) * b_b_stride + uint64_t(i) * b_n_stride;
+            a[a_idx] = a_values[batch_id][i];
+            b[b_idx] = b_values[batch_id][i];
+            acc += a_values[batch_id][i] * b_values[batch_id][i];
+        }
+
+        const uint64_t out_idx = uint64_t(batch_id) * out_b_stride;
+        expected_out[out_idx] = acc;
+    }
+
+    auto bufferA = ctx.createBuffer(sizeof(float) * a.size(), socl::BufferType::Auto);
+    auto bufferB = ctx.createBuffer(sizeof(float) * b.size(), socl::BufferType::Auto);
+    auto bufferOut = ctx.createBuffer(sizeof(float) * out.size(), socl::BufferType::Auto);
+
+    bufferA.write(a.data(), sizeof(float) * a.size());
+    bufferB.write(b.data(), sizeof(float) * b.size());
+    bufferOut.write(out.data(), sizeof(float) * out.size());
+
+    soclblas::BinaryReductionArguments args = {
+        .b = batch,
+        .n = n,
+        .a_b_stride = a_b_stride,
+        .a_n_stride = a_n_stride,
+        .b_b_stride = b_b_stride,
+        .b_n_stride = b_n_stride,
+        .out_b_stride = out_b_stride,
+        .out_n_stride = out_n_stride
+    };
+
+    dot(bufferA, bufferB, bufferOut, args);
+    bufferOut.read(out.data(), sizeof(float) * out.size());
+
+    EXPECT_TRUE(is_equal_tensor(out, expected_out));
 }
 
 TEST(ReductionNaiveTest, ComputesSumAndAvgWithBatchStrides){
