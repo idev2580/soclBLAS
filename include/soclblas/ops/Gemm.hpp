@@ -17,6 +17,11 @@ namespace soclblas{
         uint32_t tile_n;
         uint32_t tile_p;
 
+        protected:
+        Gemm(
+            socl::Context& ctx
+        );
+
         public:
         Gemm(
             socl::Context& ctx,

@@ -30,7 +30,7 @@ namespace soclblas{
         static AxpyOutPlaceArguments sameOutputLayout(const AxpyArguments& args);
         void fromInPlace(const AxpyArguments& args);
     };
-    class Axpy: public Operator{
+    class AxpyFP32: public Operator{
         private:
         socl::Context& ctx;
         socl::ShaderPipeline pipeline;
@@ -38,7 +38,7 @@ namespace soclblas{
         uint32_t thread_num;
 
         public:
-        Axpy(
+        AxpyFP32(
             socl::Context& ctx,
             uint32_t thread_num = 64
         );

@@ -1,24 +1,31 @@
 #pragma once
 #include "socl/Buffer.hpp"
+#include "socl/Context.hpp"
 #include "socl/DescriptorSet.hpp"
-#include <cstdint>
-#include <socl/Context.hpp>
-#include <soclblas/ops/Axpy.hpp>
-#include <soclblas/ops/Operator.hpp>
+#include <soclblas/ops/Gemm.hpp>
 
 namespace soclblas{
-    class AxpyOutPlaceFP32: public Operator{
+    class GemmSharedFP32: public Gemm{
         private:
         socl::Context& ctx;
         socl::ShaderPipeline pipeline;
         socl::DescriptorSet descSet;
-        uint32_t thread_num;
+        uint32_t block_m;
+        uint32_t block_n;
+        uint32_t block_p;
+        uint32_t thread_tile_m;
+        uint32_t thread_tile_p;
 
         public:
-        AxpyOutPlaceFP32(
+        GemmSharedFP32(
             socl::Context& ctx,
-            uint32_t thread_num = 64
+            uint32_t block_m = 64,
+            uint32_t block_n = 16,
+            uint32_t block_p = 64,
+            uint32_t thread_tile_m = 4,
+            uint32_t thread_tile_p = 4
         );
+
         virtual void execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
@@ -30,14 +37,9 @@ namespace soclblas{
         virtual void operator()(
             socl::Buffer A,
             socl::Buffer B,
-            socl::Buffer outB,
-            const AxpyOutPlaceArguments& args
-        );
-        virtual void operator()(
-            socl::Buffer A,
-            socl::Buffer B,
-            socl::Buffer outB,
-            const AxpyArguments& args
-        );
+            socl::Buffer C,
+            const GemmArguments& args
+        ) override;
     };
+
 }

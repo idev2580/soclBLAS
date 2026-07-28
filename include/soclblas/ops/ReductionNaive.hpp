@@ -5,7 +5,7 @@
 #include <soclblas/ops/Reduction.hpp>
 
 namespace soclblas{
-    class MaxNaive:public IndexedUnaryReduction{
+    class MaxNaiveFP32:public IndexedUnaryReduction{
         private:
         socl::Context& ctx;
         socl::ShaderPipeline pipeline;
@@ -13,7 +13,7 @@ namespace soclblas{
         uint32_t thread_num;
 
         public:
-        MaxNaive(
+        MaxNaiveFP32(
             socl::Context& ctx,
             uint32_t thread_num = 32
         );
@@ -33,7 +33,7 @@ namespace soclblas{
             const IndexedUnaryReductionArguments& args
         ) override;
     };
-    class MinNaive:public IndexedUnaryReduction{
+    class MinNaiveFP32:public IndexedUnaryReduction{
         private:
         socl::Context& ctx;
         socl::ShaderPipeline pipeline;
@@ -41,7 +41,7 @@ namespace soclblas{
         uint32_t thread_num;
 
         public:
-        MinNaive(
+        MinNaiveFP32(
             socl::Context& ctx,
             uint32_t thread_num = 32
         );
@@ -61,7 +61,7 @@ namespace soclblas{
             const IndexedUnaryReductionArguments& args
         ) override;
     };
-    class AvgNaive:public UnaryReduction{
+    class AvgNaiveFP32:public UnaryReduction{
         private:
         socl::Context& ctx;
         socl::ShaderPipeline pipeline;
@@ -69,7 +69,7 @@ namespace soclblas{
         uint32_t thread_num;
 
         public:
-        AvgNaive(
+        AvgNaiveFP32(
             socl::Context& ctx,
             uint32_t thread_num = 32
         );
@@ -88,7 +88,7 @@ namespace soclblas{
             const UnaryReductionArguments& args
         ) override;
     };
-    class SumNaive:public UnaryReduction{
+    class SumNaiveFP32:public UnaryReduction{
         private:
         socl::Context& ctx;
         socl::ShaderPipeline pipeline;
@@ -96,7 +96,7 @@ namespace soclblas{
         uint32_t thread_num;
 
         public:
-        SumNaive(
+        SumNaiveFP32(
             socl::Context& ctx,
             uint32_t thread_num = 32
         );

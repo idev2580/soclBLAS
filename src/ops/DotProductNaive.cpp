@@ -3,7 +3,7 @@
 #include <DotProductNaiveFP32_SPIRV>
 
 namespace soclblas{
-    DotProductNaive::DotProductNaive(
+    DotProductNaiveFP32::DotProductNaiveFP32(
         socl::Context& ctx,
         uint32_t thread_num
     ):ctx(ctx), thread_num(thread_num){
@@ -22,7 +22,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void DotProductNaive::execute(
+    void DotProductNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -45,7 +45,7 @@ namespace soclblas{
         ctx.submitAndWait();
     }
 
-    void DotProductNaive::operator()(
+    void DotProductNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer b,
         socl::Buffer out,

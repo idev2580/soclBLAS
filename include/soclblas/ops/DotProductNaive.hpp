@@ -5,7 +5,7 @@
 #include <soclblas/ops/Reduction.hpp>
 
 namespace soclblas{
-    class DotProductNaive:public BinaryReduction{
+    class DotProductNaiveFP32:public BinaryReduction{
         private:
         socl::Context& ctx;
         socl::ShaderPipeline pipeline;
@@ -13,7 +13,7 @@ namespace soclblas{
         uint32_t thread_num;
 
         public:
-        DotProductNaive(
+        DotProductNaiveFP32(
             socl::Context& ctx,
             uint32_t thread_num = 32
         );

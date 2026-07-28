@@ -30,6 +30,17 @@ target_include_directories(soclblas
 )
 target_link_libraries(soclblas PUBLIC socl)
 
+function(copy_target_runtime_dlls target_name)
+    if(WIN32)
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:${target_name}>
+                $<TARGET_FILE_DIR:${target_name}>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+endfunction()
+
 if(TEST_SOURCES)
     if(MSVC)
         set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -42,15 +53,14 @@ if(TEST_SOURCES)
     FetchContent_MakeAvailable(googletest)
     add_executable(soclblas_tests ${TEST_SOURCES})
     target_link_libraries(soclblas_tests PRIVATE soclblas GTest::gtest_main)
-    if(WIN32)
-        add_custom_command(TARGET soclblas_tests POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:soclblas_tests>
-                $<TARGET_FILE_DIR:soclblas_tests>
-            COMMAND_EXPAND_LISTS
-        )
-    endif()
+    copy_target_runtime_dlls(soclblas_tests)
 
     include(GoogleTest)
     gtest_discover_tests(soclblas_tests)
+endif()
+
+if(PERFORMANCE_TEST_SOURCES)
+    add_executable(soclblas_performance_tests ${PERFORMANCE_TEST_SOURCES})
+    target_link_libraries(soclblas_performance_tests PRIVATE soclblas)
+    copy_target_runtime_dlls(soclblas_performance_tests)
 endif()

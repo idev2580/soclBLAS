@@ -8,6 +8,7 @@ set(SOURCES
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/GemmNaive.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/GemmOutPlace.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/GemmOutPlaceNaive.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/ops/GemmShared.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/Gemv.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/GemvArguments.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/GemvNaive.cpp"

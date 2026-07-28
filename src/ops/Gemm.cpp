@@ -3,6 +3,10 @@
 
 namespace soclblas{
     Gemm::Gemm(
+        socl::Context& ctx
+    ):ctx(ctx), tile_m(1), tile_n(1), tile_p(1){}
+
+    Gemm::Gemm(
         socl::Context& ctx,
         std::span<const uint32_t> shaderBytecodes,
         uint32_t tile_m,

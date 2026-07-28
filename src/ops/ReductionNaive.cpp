@@ -6,7 +6,7 @@
 #include <SumNaiveFP32_SPIRV>
 
 namespace soclblas{
-    MaxNaive::MaxNaive(
+    MaxNaiveFP32::MaxNaiveFP32(
         socl::Context& ctx,
         uint32_t thread_num
     ):ctx(ctx), thread_num(thread_num){
@@ -25,7 +25,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void MaxNaive::execute(
+    void MaxNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -48,7 +48,7 @@ namespace soclblas{
         ctx.submitAndWait();
     }
 
-    void MaxNaive::operator()(
+    void MaxNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer outValue,
         socl::Buffer outIndex,
@@ -66,7 +66,7 @@ namespace soclblas{
         );
     }
 
-    MinNaive::MinNaive(
+    MinNaiveFP32::MinNaiveFP32(
         socl::Context& ctx,
         uint32_t thread_num
     ):ctx(ctx), thread_num(thread_num){
@@ -85,7 +85,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void MinNaive::execute(
+    void MinNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -108,7 +108,7 @@ namespace soclblas{
         ctx.submitAndWait();
     }
 
-    void MinNaive::operator()(
+    void MinNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer outValue,
         socl::Buffer outIndex,
@@ -126,7 +126,7 @@ namespace soclblas{
         );
     }
 
-    AvgNaive::AvgNaive(
+    AvgNaiveFP32::AvgNaiveFP32(
         socl::Context& ctx,
         uint32_t thread_num
     ):ctx(ctx), thread_num(thread_num){
@@ -144,7 +144,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void AvgNaive::execute(
+    void AvgNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -166,7 +166,7 @@ namespace soclblas{
         ctx.submitAndWait();
     }
 
-    void AvgNaive::operator()(
+    void AvgNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer out,
         const UnaryReductionArguments& args
@@ -177,7 +177,7 @@ namespace soclblas{
         this->execute(inputs, inouts, outputs, &args, sizeof(UnaryReductionArguments));
     }
 
-    SumNaive::SumNaive(
+    SumNaiveFP32::SumNaiveFP32(
         socl::Context& ctx,
         uint32_t thread_num
     ):ctx(ctx), thread_num(thread_num){
@@ -195,7 +195,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void SumNaive::execute(
+    void SumNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -217,7 +217,7 @@ namespace soclblas{
         ctx.submitAndWait();
     }
 
-    void SumNaive::operator()(
+    void SumNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer out,
         const UnaryReductionArguments& args

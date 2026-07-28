@@ -78,7 +78,7 @@ void run_cpu_gemv(
 
 TEST(AxpyOutPlaceTest, SupportsBatchAndDistinctStrides){
     socl::Context ctx;
-    soclblas::AxpyOutPlace axpy(ctx);
+    soclblas::AxpyOutPlaceFP32 axpy(ctx);
 
     const uint32_t batch = 3;
     const uint32_t n = 5;
@@ -760,7 +760,7 @@ TEST(GemvOutPlaceNaiveTest, SupportsDistinctOutputStride){
 
 TEST(ReductionNaiveTest, ComputesDotProductWithBatchStrides){
     socl::Context ctx;
-    soclblas::DotProductNaive dot(ctx);
+    soclblas::DotProductNaiveFP32 dot(ctx);
 
     constexpr uint32_t batch = 2;
     constexpr uint32_t n = 5;
@@ -835,8 +835,8 @@ TEST(ReductionNaiveTest, ComputesDotProductWithBatchStrides){
 
 TEST(ReductionNaiveTest, ComputesSumAndAvgWithBatchStrides){
     socl::Context ctx;
-    soclblas::SumNaive sum(ctx);
-    soclblas::AvgNaive avg(ctx);
+    soclblas::SumNaiveFP32 sum(ctx);
+    soclblas::AvgNaiveFP32 avg(ctx);
 
     constexpr uint32_t batch = 2;
     constexpr uint32_t n = 5;
@@ -904,8 +904,8 @@ TEST(ReductionNaiveTest, ComputesSumAndAvgWithBatchStrides){
 
 TEST(ReductionNaiveTest, ComputesMaxAndMinValuesAndIndices){
     socl::Context ctx;
-    soclblas::MaxNaive max(ctx);
-    soclblas::MinNaive min(ctx);
+    soclblas::MaxNaiveFP32 max(ctx);
+    soclblas::MinNaiveFP32 min(ctx);
 
     constexpr uint32_t batch = 2;
     constexpr uint32_t n = 6;

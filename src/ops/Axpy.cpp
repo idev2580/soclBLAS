@@ -3,7 +3,7 @@
 #include <AxpyFP32_SPIRV>
 
 namespace soclblas{
-    Axpy::Axpy(
+    AxpyFP32::AxpyFP32(
         socl::Context& ctx,
         uint32_t thread_num
     ):ctx(ctx), thread_num(thread_num){
@@ -20,7 +20,7 @@ namespace soclblas{
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
-    void Axpy::execute(
+    void AxpyFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -41,7 +41,7 @@ namespace soclblas{
         ctx.dispatch(axpyArgs->b, group_cnt, 1);
         ctx.submitAndWait();
     }
-    void Axpy::operator()(
+    void AxpyFP32::operator()(
         socl::Buffer A,
         socl::Buffer B,
         const AxpyArguments& args
