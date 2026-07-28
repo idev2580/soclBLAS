@@ -9,6 +9,7 @@
 #include <soclblas/ops/GemvNaive.hpp>
 #include <soclblas/ops/GemvOutPlaceNaive.hpp>
 #include <soclblas/ops/MatMulNaive.hpp>
+#include <soclblas/ops/ReductionNaive.hpp>
 #include "lib/MinCpuBlas.hpp"
 
 constexpr int gemm_test_iter = 10;
@@ -754,6 +755,174 @@ TEST(GemvOutPlaceNaiveTest, SupportsDistinctOutputStride){
 
     EXPECT_TRUE(is_equal_tensor(out_y, expected_out_y));
     EXPECT_TRUE(is_equal_tensor(y, original_y));
+}
+
+TEST(ReductionNaiveTest, ComputesSumAndAvgWithBatchStrides){
+    socl::Context ctx;
+    soclblas::SumNaive sum(ctx);
+    soclblas::AvgNaive avg(ctx);
+
+    constexpr uint32_t batch = 2;
+    constexpr uint32_t n = 5;
+    const uint32_t a_n_stride = 2;
+    const uint32_t a_b_stride = n * a_n_stride + 3;
+    const uint32_t out_b_stride = 2;
+    const uint32_t out_n_stride = 1;
+    const float sentinel = -777.0f;
+
+    const uint64_t a_size =
+        uint64_t(batch - 1) * a_b_stride + uint64_t(n - 1) * a_n_stride + 1;
+    const uint64_t out_size = uint64_t(batch - 1) * out_b_stride + 1;
+
+    std::vector<float> a(a_size, sentinel);
+    std::vector<float> sum_out(out_size, sentinel);
+    std::vector<float> avg_out(out_size, sentinel);
+    std::vector<float> expected_sum(out_size, sentinel);
+    std::vector<float> expected_avg(out_size, sentinel);
+
+    const float values[batch][n] = {
+        {1.0f, -2.0f, 3.5f, 4.0f, -1.0f},
+        {-3.0f, 7.0f, 2.0f, -5.0f, 9.0f}
+    };
+
+    for(uint32_t batch_id=0; batch_id < batch; batch_id++){
+        float acc = 0.0f;
+        for(uint32_t i=0; i < n; i++){
+            const uint64_t a_idx =
+                uint64_t(batch_id) * a_b_stride + uint64_t(i) * a_n_stride;
+            a[a_idx] = values[batch_id][i];
+            acc += values[batch_id][i];
+        }
+
+        const uint64_t out_idx = uint64_t(batch_id) * out_b_stride;
+        expected_sum[out_idx] = acc;
+        expected_avg[out_idx] = acc / float(n);
+    }
+
+    auto bufferA = ctx.createBuffer(sizeof(float) * a.size(), socl::BufferType::Auto);
+    auto bufferSumOut = ctx.createBuffer(sizeof(float) * sum_out.size(), socl::BufferType::Auto);
+    auto bufferAvgOut = ctx.createBuffer(sizeof(float) * avg_out.size(), socl::BufferType::Auto);
+
+    bufferA.write(a.data(), sizeof(float) * a.size());
+    bufferSumOut.write(sum_out.data(), sizeof(float) * sum_out.size());
+    bufferAvgOut.write(avg_out.data(), sizeof(float) * avg_out.size());
+
+    soclblas::UnaryReductionArguments args = {
+        .b = batch,
+        .n = n,
+        .a_b_stride = a_b_stride,
+        .a_n_stride = a_n_stride,
+        .out_b_stride = out_b_stride,
+        .out_n_stride = out_n_stride
+    };
+
+    sum(bufferA, bufferSumOut, args);
+    avg(bufferA, bufferAvgOut, args);
+
+    bufferSumOut.read(sum_out.data(), sizeof(float) * sum_out.size());
+    bufferAvgOut.read(avg_out.data(), sizeof(float) * avg_out.size());
+
+    EXPECT_TRUE(is_equal_tensor(sum_out, expected_sum));
+    EXPECT_TRUE(is_equal_tensor(avg_out, expected_avg));
+}
+
+TEST(ReductionNaiveTest, ComputesMaxAndMinValuesAndIndices){
+    socl::Context ctx;
+    soclblas::MaxNaive max(ctx);
+    soclblas::MinNaive min(ctx);
+
+    constexpr uint32_t batch = 2;
+    constexpr uint32_t n = 6;
+    const uint32_t a_n_stride = 2;
+    const uint32_t a_b_stride = n * a_n_stride + 4;
+    const uint32_t out_value_b_stride = 2;
+    const uint32_t out_value_n_stride = 1;
+    const uint32_t out_index_b_stride = 2;
+    const uint32_t out_index_n_stride = 1;
+    const float value_sentinel = -555.0f;
+    const uint32_t index_sentinel = 999u;
+
+    const uint64_t a_size =
+        uint64_t(batch - 1) * a_b_stride + uint64_t(n - 1) * a_n_stride + 1;
+    const uint64_t out_value_size =
+        uint64_t(batch - 1) * out_value_b_stride + 1;
+    const uint64_t out_index_size =
+        uint64_t(batch - 1) * out_index_b_stride + 1;
+
+    std::vector<float> a(a_size, value_sentinel);
+    std::vector<float> max_values(out_value_size, value_sentinel);
+    std::vector<float> min_values(out_value_size, value_sentinel);
+    std::vector<float> expected_max_values(out_value_size, value_sentinel);
+    std::vector<float> expected_min_values(out_value_size, value_sentinel);
+    std::vector<uint32_t> max_indices(out_index_size, index_sentinel);
+    std::vector<uint32_t> min_indices(out_index_size, index_sentinel);
+    std::vector<uint32_t> expected_max_indices(out_index_size, index_sentinel);
+    std::vector<uint32_t> expected_min_indices(out_index_size, index_sentinel);
+
+    const float values[batch][n] = {
+        {1.0f, 7.0f, -3.0f, 7.0f, -3.0f, 2.0f},
+        {4.0f, -8.0f, 6.0f, 6.0f, -8.0f, 5.0f}
+    };
+
+    for(uint32_t batch_id=0; batch_id < batch; batch_id++){
+        uint32_t max_idx = 0;
+        uint32_t min_idx = 0;
+        for(uint32_t i=0; i < n; i++){
+            const uint64_t a_idx =
+                uint64_t(batch_id) * a_b_stride + uint64_t(i) * a_n_stride;
+            a[a_idx] = values[batch_id][i];
+
+            if(values[batch_id][i] > values[batch_id][max_idx]){
+                max_idx = i;
+            }
+            if(values[batch_id][i] < values[batch_id][min_idx]){
+                min_idx = i;
+            }
+        }
+
+        const uint64_t value_idx = uint64_t(batch_id) * out_value_b_stride;
+        const uint64_t index_idx = uint64_t(batch_id) * out_index_b_stride;
+        expected_max_values[value_idx] = values[batch_id][max_idx];
+        expected_min_values[value_idx] = values[batch_id][min_idx];
+        expected_max_indices[index_idx] = max_idx;
+        expected_min_indices[index_idx] = min_idx;
+    }
+
+    auto bufferA = ctx.createBuffer(sizeof(float) * a.size(), socl::BufferType::Auto);
+    auto bufferMaxValues = ctx.createBuffer(sizeof(float) * max_values.size(), socl::BufferType::Auto);
+    auto bufferMinValues = ctx.createBuffer(sizeof(float) * min_values.size(), socl::BufferType::Auto);
+    auto bufferMaxIndices = ctx.createBuffer(sizeof(uint32_t) * max_indices.size(), socl::BufferType::Auto);
+    auto bufferMinIndices = ctx.createBuffer(sizeof(uint32_t) * min_indices.size(), socl::BufferType::Auto);
+
+    bufferA.write(a.data(), sizeof(float) * a.size());
+    bufferMaxValues.write(max_values.data(), sizeof(float) * max_values.size());
+    bufferMinValues.write(min_values.data(), sizeof(float) * min_values.size());
+    bufferMaxIndices.write(max_indices.data(), sizeof(uint32_t) * max_indices.size());
+    bufferMinIndices.write(min_indices.data(), sizeof(uint32_t) * min_indices.size());
+
+    soclblas::IndexedUnaryReductionArguments args = {
+        .b = batch,
+        .n = n,
+        .a_b_stride = a_b_stride,
+        .a_n_stride = a_n_stride,
+        .out_value_b_stride = out_value_b_stride,
+        .out_value_n_stride = out_value_n_stride,
+        .out_index_b_stride = out_index_b_stride,
+        .out_index_n_stride = out_index_n_stride
+    };
+
+    max(bufferA, bufferMaxValues, bufferMaxIndices, args);
+    min(bufferA, bufferMinValues, bufferMinIndices, args);
+
+    bufferMaxValues.read(max_values.data(), sizeof(float) * max_values.size());
+    bufferMinValues.read(min_values.data(), sizeof(float) * min_values.size());
+    bufferMaxIndices.read(max_indices.data(), sizeof(uint32_t) * max_indices.size());
+    bufferMinIndices.read(min_indices.data(), sizeof(uint32_t) * min_indices.size());
+
+    EXPECT_TRUE(is_equal_tensor(max_values, expected_max_values));
+    EXPECT_TRUE(is_equal_tensor(min_values, expected_min_values));
+    EXPECT_EQ(max_indices, expected_max_indices);
+    EXPECT_EQ(min_indices, expected_min_indices);
 }
 
 TEST(MatMulNaiveTest, BasicAssertion){

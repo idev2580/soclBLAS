@@ -5,10 +5,15 @@ set(
     MANUAL_SHADERS
     "${CMAKE_CURRENT_SOURCE_DIR}/AxpyFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AxpyOutPlaceFP32.comp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AvgNaiveFP32.comp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DotProductNaiveFP32.comp"
     # "${CMAKE_SOURCE_DIR}/shaders/GemvNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmOutPlaceNaiveFP32.comp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/MaxNaiveFP32.comp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/MinNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MatMulNaiveFP32.comp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/SumNaiveFP32.comp"
 )
 set(
     ALL_SHADER_SOURCES

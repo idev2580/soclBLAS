@@ -16,6 +16,7 @@ set(SOURCES
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/MatMul.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/MatMulNaive.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/Operator.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/ops/ReductionNaive.cpp"
 )
 
 # Export to parent

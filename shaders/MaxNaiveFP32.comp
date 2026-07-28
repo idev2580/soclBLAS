@@ -1,0 +1,95 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+
+layout(constant_id = 0) const uint thread_num = 32;
+layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
+    float a[];
+};
+
+layout(set = 0, binding = 1) writeonly restrict buffer tensor_out_value {
+    float out_value[];
+};
+
+layout(set = 0, binding = 2) writeonly restrict buffer tensor_out_index {
+    uint out_index[];
+};
+
+layout(push_constant) uniform constants {
+    uint b;
+    uint n;
+    uint a_b_stride;
+    uint a_n_stride;
+    uint out_value_b_stride;
+    uint out_value_n_stride;
+    uint out_index_b_stride;
+    uint out_index_n_stride;
+} args;
+
+shared float subgroup_values[thread_num];
+shared uint subgroup_indices[thread_num];
+
+uint get_a_idx(uint batch_id, uint i) {
+    return batch_id * args.a_b_stride + i * args.a_n_stride;
+}
+
+uint get_out_value_idx(uint batch_id) {
+    return batch_id * args.out_value_b_stride;
+}
+
+uint get_out_index_idx(uint batch_id) {
+    return batch_id * args.out_index_b_stride;
+}
+
+bool is_better(float lhs_value, uint lhs_index, float rhs_value, uint rhs_index) {
+    return lhs_value > rhs_value || (lhs_value == rhs_value && lhs_index < rhs_index);
+}
+
+void main() {
+    const uint batch_id = gl_WorkGroupID.x;
+    const uint local_id = gl_LocalInvocationID.x;
+
+    bool has_value = false;
+    float best_value = -3.4028234663852886e+38;
+    uint best_index = 0xffffffffu;
+    for (uint i = local_id; i < args.n; i += thread_num) {
+        const float value = a[get_a_idx(batch_id, i)];
+        if (!has_value || is_better(value, i, best_value, best_index)) {
+            best_value = value;
+            best_index = i;
+            has_value = true;
+        }
+    }
+
+    const float subgroup_value = subgroupMax(best_value);
+    const uint candidate_index =
+        best_value == subgroup_value ? best_index : 0xffffffffu;
+    const uint subgroup_index = subgroupMin(candidate_index);
+
+    if (subgroupElect()) {
+        subgroup_values[gl_SubgroupID] = subgroup_value;
+        subgroup_indices[gl_SubgroupID] = subgroup_index;
+    }
+    barrier();
+
+    if (local_id == 0) {
+        float out_best_value = -3.4028234663852886e+38;
+        uint out_best_index = 0xffffffffu;
+        for (uint i = 0u; i < gl_NumSubgroups; i++) {
+            const float value = subgroup_values[i];
+            const uint index = subgroup_indices[i];
+            if (index != 0xffffffffu &&
+                (out_best_index == 0xffffffffu ||
+                 is_better(value, index, out_best_value, out_best_index))) {
+                out_best_value = value;
+                out_best_index = index;
+            }
+        }
+
+        out_value[get_out_value_idx(batch_id)] = args.n == 0 ? 0.0 : out_best_value;
+        out_index[get_out_index_idx(batch_id)] = args.n == 0 ? 0u : out_best_index;
+    }
+}

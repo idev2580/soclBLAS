@@ -1,0 +1,58 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+
+layout(constant_id = 0) const uint thread_num = 32;
+layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
+    float a[];
+};
+
+layout(set = 0, binding = 1) writeonly restrict buffer tensor_out {
+    float out_data[];
+};
+
+layout(push_constant) uniform constants {
+    uint b;
+    uint n;
+    uint a_b_stride;
+    uint a_n_stride;
+    uint out_b_stride;
+    uint out_n_stride;
+} args;
+
+shared float subgroup_partials[thread_num];
+
+uint get_a_idx(uint batch_id, uint i) {
+    return batch_id * args.a_b_stride + i * args.a_n_stride;
+}
+
+uint get_out_idx(uint batch_id) {
+    return batch_id * args.out_b_stride;
+}
+
+void main() {
+    const uint batch_id = gl_WorkGroupID.x;
+    const uint local_id = gl_LocalInvocationID.x;
+
+    float acc = 0.0;
+    for (uint i = local_id; i < args.n; i += thread_num) {
+        acc += a[get_a_idx(batch_id, i)];
+    }
+
+    const float subgroup_sum = subgroupAdd(acc);
+    if (subgroupElect()) {
+        subgroup_partials[gl_SubgroupID] = subgroup_sum;
+    }
+    barrier();
+
+    if (local_id == 0) {
+        float sum = 0.0;
+        for (uint i = 0u; i < gl_NumSubgroups; i++) {
+            sum += subgroup_partials[i];
+        }
+        out_data[get_out_idx(batch_id)] = sum;
+    }
+}
