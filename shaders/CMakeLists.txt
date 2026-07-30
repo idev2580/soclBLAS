@@ -8,6 +8,7 @@ set(
     "${CMAKE_CURRENT_SOURCE_DIR}/AvgNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DotProductNaiveFP32.comp"
     # "${CMAKE_SOURCE_DIR}/shaders/GemvNaiveFP32.comp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/GemmContiguousNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmOutPlaceNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmSharedFP32.comp"

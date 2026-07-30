@@ -1,0 +1,310 @@
+#version 460
+
+// Contiguous/aligned shared-memory FP32 GEMM.
+layout(constant_id = 0) const uint block_m = 64;
+layout(constant_id = 1) const uint block_n = 16;
+layout(constant_id = 2) const uint block_p = 64;
+layout(constant_id = 3) const uint block_m_d4 = 16;
+layout(constant_id = 4) const uint block_n_d4 = 4;
+layout(constant_id = 5) const uint block_p_d4 = 16;
+layout(constant_id = 6) const uint local_m_cnt = 16;
+layout(constant_id = 7) const uint local_p_cnt = 16;
+layout(constant_id = 8) const uint thread_tile_m = 4;
+layout(constant_id = 9) const uint thread_tile_p = 4;
+layout(local_size_x_id = 6, local_size_y_id = 7, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
+    vec4 a[];
+};
+
+layout(set = 0, binding = 1) readonly restrict buffer tensor_b {
+    vec4 b[];
+};
+
+layout(set = 0, binding = 2) restrict buffer tensor_c {
+    float c[];
+};
+
+layout(push_constant) uniform constants {
+    uint batch;
+    uint m;
+    uint n;
+    uint p;
+    float alpha;
+    float beta;
+    uint a_stride;
+    uint b_stride;
+    uint c_stride;
+    uint a_major_stride;
+    uint b_major_stride;
+    uint c_major_stride;
+    uint flags;
+} args;
+
+const uint max_thread_tile_m = 8;
+const uint max_thread_tile_p = 8;
+const uint max_thread_accum = max_thread_tile_m * max_thread_tile_p;
+
+const uint flag_a_trans = 1;
+const uint flag_b_trans = 2;
+const uint flag_c_trans = 4;
+
+shared float tile_a[block_m][block_n];
+shared float tile_b[block_n][block_p];
+
+uint get_a_idx(uint batch_id, uint row, uint col) {
+    return batch_id * args.a_stride + row * args.a_major_stride + col;
+}
+
+uint get_a_trans_idx(uint batch_id, uint row, uint col) {
+    return batch_id * args.a_stride + row + col * args.a_major_stride;
+}
+
+uint get_b_idx(uint batch_id, uint row, uint col) {
+    return batch_id * args.b_stride + row * args.b_major_stride + col;
+}
+
+uint get_b_trans_idx(uint batch_id, uint row, uint col) {
+    return batch_id * args.b_stride + row + col * args.b_major_stride;
+}
+
+uint get_c_idx(uint batch_id, uint row, uint col) {
+    return batch_id * args.c_stride + row * args.c_major_stride + col;
+}
+
+uint get_c_trans_idx(uint batch_id, uint row, uint col) {
+    return batch_id * args.c_stride + row + col * args.c_major_stride;
+}
+
+vec4 load_a_vec(uint batch_id, uint row, uint col) {
+    return a[get_a_idx(batch_id, row, col) / 4];
+}
+
+vec4 load_a_trans_vec(uint batch_id, uint row, uint col) {
+    return a[get_a_trans_idx(batch_id, row, col) / 4];
+}
+
+vec4 load_b_vec(uint batch_id, uint row, uint col) {
+    return b[get_b_idx(batch_id, row, col) / 4];
+}
+
+vec4 load_b_trans_vec(uint batch_id, uint row, uint col) {
+    return b[get_b_trans_idx(batch_id, row, col) / 4];
+}
+
+void store_tile_a_cols(uint row, uint col, vec4 value) {
+    tile_a[row][col] = value.x;
+    tile_a[row][col + 1] = value.y;
+    tile_a[row][col + 2] = value.z;
+    tile_a[row][col + 3] = value.w;
+}
+
+void store_tile_a_rows(uint row, uint col, vec4 value) {
+    tile_a[row][col] = value.x;
+    tile_a[row + 1][col] = value.y;
+    tile_a[row + 2][col] = value.z;
+    tile_a[row + 3][col] = value.w;
+}
+
+void store_tile_b_cols(uint row, uint col, vec4 value) {
+    tile_b[row][col] = value.x;
+    tile_b[row][col + 1] = value.y;
+    tile_b[row][col + 2] = value.z;
+    tile_b[row][col + 3] = value.w;
+}
+
+void store_tile_b_rows(uint row, uint col, vec4 value) {
+    tile_b[row][col] = value.x;
+    tile_b[row + 1][col] = value.y;
+    tile_b[row + 2][col] = value.z;
+    tile_b[row + 3][col] = value.w;
+}
+
+float load_c_scalar(uint batch_id, uint row, uint col) {
+    return c[get_c_idx(batch_id, row, col)];
+}
+
+float load_c_trans_scalar(uint batch_id, uint row, uint col) {
+    return c[get_c_trans_idx(batch_id, row, col)];
+}
+
+void store_c_scalar(uint batch_id, uint row, uint col, float value) {
+    c[get_c_idx(batch_id, row, col)] = value;
+}
+
+void store_c_trans_scalar(uint batch_id, uint row, uint col, float value) {
+    c[get_c_trans_idx(batch_id, row, col)] = value;
+}
+
+void load_tile_a(
+    uint batch_id,
+    uint block_m_id,
+    uint block_n_id,
+    uint local_id,
+    uint local_count,
+    bool a_trans
+) {
+    if(a_trans) {
+        for(uint load_idx = local_id; load_idx < block_m_d4 * block_n; load_idx += local_count) {
+            const uint load_m = (load_idx / block_n) * 4;
+            const uint load_n = load_idx % block_n;
+            const uint a_row = block_m_id * block_m + load_m;
+            const uint a_col = block_n_id * block_n + load_n;
+
+            store_tile_a_rows(load_m, load_n, load_a_trans_vec(batch_id, a_row, a_col));
+        }
+    } else {
+        for(uint load_idx = local_id; load_idx < block_m * block_n_d4; load_idx += local_count) {
+            const uint load_m = load_idx / block_n_d4;
+            const uint load_n = (load_idx % block_n_d4) * 4;
+            const uint a_row = block_m_id * block_m + load_m;
+            const uint a_col = block_n_id * block_n + load_n;
+
+            store_tile_a_cols(load_m, load_n, load_a_vec(batch_id, a_row, a_col));
+        }
+    }
+}
+
+void load_tile_b(
+    uint batch_id,
+    uint block_p_id,
+    uint block_n_id,
+    uint local_id,
+    uint local_count,
+    bool b_trans
+) {
+    if(b_trans) {
+        for(uint load_idx = local_id; load_idx < block_n_d4 * block_p; load_idx += local_count) {
+            const uint load_n = (load_idx / block_p) * 4;
+            const uint load_p = load_idx % block_p;
+            const uint b_row = block_n_id * block_n + load_n;
+            const uint b_col = block_p_id * block_p + load_p;
+
+            store_tile_b_rows(load_n, load_p, load_b_trans_vec(batch_id, b_row, b_col));
+        }
+    } else {
+        for(uint load_idx = local_id; load_idx < block_n * block_p_d4; load_idx += local_count) {
+            const uint load_n = load_idx / block_p_d4;
+            const uint load_p = (load_idx % block_p_d4) * 4;
+            const uint b_row = block_n_id * block_n + load_n;
+            const uint b_col = block_p_id * block_p + load_p;
+
+            store_tile_b_cols(load_n, load_p, load_b_vec(batch_id, b_row, b_col));
+        }
+    }
+}
+
+void main() {
+    const uint batch_id = gl_WorkGroupID.x;
+    const uint block_m_id = gl_WorkGroupID.y;
+    const uint block_p_id = gl_WorkGroupID.z;
+
+    const uint local_m = gl_LocalInvocationID.x;
+    const uint local_p = gl_LocalInvocationID.y;
+    const uint local_id = local_p * local_m_cnt + local_m;
+    const uint local_count = local_m_cnt * local_p_cnt;
+
+    const uint block_row_base = local_m * thread_tile_m;
+    const uint block_col_base = local_p * thread_tile_p;
+    const uint global_row_base = block_m_id * block_m + block_row_base;
+    const uint global_col_base = block_p_id * block_p + block_col_base;
+    const uint tiled_n_cnt = args.n / block_n;
+    const bool a_trans = (args.flags & flag_a_trans) != 0;
+    const bool b_trans = (args.flags & flag_b_trans) != 0;
+    const bool c_trans = (args.flags & flag_c_trans) != 0;
+
+    float acc[max_thread_accum];
+    for(uint i = 0; i < max_thread_accum; i++) {
+        acc[i] = 0.0;
+    }
+
+    for(uint block_n_id = 0; block_n_id < tiled_n_cnt; block_n_id++) {
+        load_tile_a(batch_id, block_m_id, block_n_id, local_id, local_count, a_trans);
+        load_tile_b(batch_id, block_p_id, block_n_id, local_id, local_count, b_trans);
+        barrier();
+
+        for(uint n_offset = 0; n_offset < block_n; n_offset++) {
+            float b_vals[max_thread_tile_p];
+            for(uint col = 0; col < thread_tile_p; col++) {
+                b_vals[col] = tile_b[n_offset][block_col_base + col];
+            }
+
+            for(uint row = 0; row < thread_tile_m; row++) {
+                const float a_val = tile_a[block_row_base + row][n_offset];
+                for(uint col = 0; col < thread_tile_p; col++) {
+                    const uint acc_idx = row * max_thread_tile_p + col;
+                    acc[acc_idx] = fma(a_val, b_vals[col], acc[acc_idx]);
+                }
+            }
+        }
+        barrier();
+    }
+
+    if(args.beta == 0.0 && args.alpha == 1.0) {
+        if(c_trans) {
+            for(uint row = 0; row < thread_tile_m; row++) {
+                const uint global_row = global_row_base + row;
+
+                for(uint col = 0; col < thread_tile_p; col++) {
+                    const uint global_col = global_col_base + col;
+                    const uint acc_idx = row * max_thread_tile_p + col;
+                    store_c_trans_scalar(batch_id, global_row, global_col, acc[acc_idx]);
+                }
+            }
+        } else {
+            for(uint row = 0; row < thread_tile_m; row++) {
+                const uint global_row = global_row_base + row;
+
+                for(uint col = 0; col < thread_tile_p; col++) {
+                    const uint global_col = global_col_base + col;
+                    const uint acc_idx = row * max_thread_tile_p + col;
+                    store_c_scalar(batch_id, global_row, global_col, acc[acc_idx]);
+                }
+            }
+        }
+    } else if(args.beta == 0.0) {
+        if(c_trans) {
+            for(uint row = 0; row < thread_tile_m; row++) {
+                const uint global_row = global_row_base + row;
+
+                for(uint col = 0; col < thread_tile_p; col++) {
+                    const uint global_col = global_col_base + col;
+                    const uint acc_idx = row * max_thread_tile_p + col;
+                    store_c_trans_scalar(batch_id, global_row, global_col, args.alpha * acc[acc_idx]);
+                }
+            }
+        } else {
+            for(uint row = 0; row < thread_tile_m; row++) {
+                const uint global_row = global_row_base + row;
+
+                for(uint col = 0; col < thread_tile_p; col++) {
+                    const uint global_col = global_col_base + col;
+                    const uint acc_idx = row * max_thread_tile_p + col;
+                    store_c_scalar(batch_id, global_row, global_col, args.alpha * acc[acc_idx]);
+                }
+            }
+        }
+    } else if(c_trans) {
+        for(uint row = 0; row < thread_tile_m; row++) {
+            const uint global_row = global_row_base + row;
+
+            for(uint col = 0; col < thread_tile_p; col++) {
+                const uint global_col = global_col_base + col;
+                const uint acc_idx = row * max_thread_tile_p + col;
+                const float c_old = load_c_trans_scalar(batch_id, global_row, global_col);
+                store_c_trans_scalar(batch_id, global_row, global_col, fma(args.alpha, acc[acc_idx], args.beta * c_old));
+            }
+        }
+    } else {
+        for(uint row = 0; row < thread_tile_m; row++) {
+            const uint global_row = global_row_base + row;
+
+            for(uint col = 0; col < thread_tile_p; col++) {
+                const uint global_col = global_col_base + col;
+                const uint acc_idx = row * max_thread_tile_p + col;
+                const float c_old = load_c_scalar(batch_id, global_row, global_col);
+                store_c_scalar(batch_id, global_row, global_col, fma(args.alpha, acc[acc_idx], args.beta * c_old));
+            }
+        }
+    }
+}

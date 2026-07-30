@@ -25,7 +25,7 @@ namespace soclblas{
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
-    void MatMul::execute(
+    socl::DispatchToken MatMul::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -49,9 +49,9 @@ namespace soclblas{
         const uint32_t tiled_m = (matmulArgs->m / tile_r_size) + (matmulArgs->m % tile_r_size != 0);
         const uint32_t tiled_p = (matmulArgs->p / tile_c_size) + (matmulArgs->p % tile_c_size != 0);
         ctx.dispatch(matmulArgs->b, tiled_m, tiled_p);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
-    void MatMul::operator()(
+    socl::DispatchToken MatMul::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
@@ -60,6 +60,6 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {A, B};
         std::vector<socl::Buffer> inouts = {};
         std::vector<socl::Buffer> outputs = {C};
-        this->execute(inputs, inouts, outputs, &args, sizeof(MatMulArguments));
+        return this->execute(inputs, inouts, outputs, &args, sizeof(MatMulArguments));
     }
 }

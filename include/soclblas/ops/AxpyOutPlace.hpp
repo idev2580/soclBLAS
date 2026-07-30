@@ -19,7 +19,7 @@ namespace soclblas{
             socl::Context& ctx,
             uint32_t thread_num = 64
         );
-        virtual void execute(
+        virtual socl::DispatchToken execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -27,13 +27,13 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual void operator()(
+        virtual socl::DispatchToken operator()(
             socl::Buffer A,
             socl::Buffer B,
             socl::Buffer outB,
             const AxpyOutPlaceArguments& args
         );
-        virtual void operator()(
+        virtual socl::DispatchToken operator()(
             socl::Buffer A,
             socl::Buffer B,
             socl::Buffer outB,

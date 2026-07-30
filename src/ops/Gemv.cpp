@@ -12,7 +12,7 @@ namespace soclblas{
     ):gemm(
         ctx, gemmShaderBytecodes, tile_m, tile_n, tile_p
     ){}
-    void Gemv::execute(
+    socl::DispatchToken Gemv::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -20,16 +20,16 @@ namespace soclblas{
         std::size_t argsSize
     ){
         GemmArguments m_args = convertGemvToGemm(*(GemvArguments*)args);
-        gemm.execute(inputs, inouts, outputs, &m_args, sizeof(GemmArguments));
+        return gemm.execute(inputs, inouts, outputs, &m_args, sizeof(GemmArguments));
     }
 
-    void Gemv::operator()(
+    socl::DispatchToken Gemv::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
         const GemvArguments& args
     ){
         GemmArguments m_args = convertGemvToGemm(args);
-        gemm(A,B,C,m_args);
+        return gemm(A,B,C,m_args);
     }
 }

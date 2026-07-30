@@ -14,7 +14,7 @@ namespace soclblas{
 
     class UnaryElementwise: public Operator{
         public:
-        virtual void operator()(
+        virtual socl::DispatchToken operator()(
             socl::Buffer a,
             socl::Buffer out,
             const UnaryElementwiseArguments& args
@@ -22,7 +22,7 @@ namespace soclblas{
     };
     class BinaryElementwise: public Operator{
         public:
-        virtual void operator()(
+        virtual socl::DispatchToken operator()(
             socl::Buffer a,
             socl::Buffer b,
             socl::Buffer out,

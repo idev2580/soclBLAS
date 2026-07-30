@@ -12,7 +12,7 @@ namespace soclblas{
     ):gemm(
         ctx, gemmShaderBytecodes, tile_m, tile_n, tile_p
     ){}
-    void GemvOutPlace::execute(
+    socl::DispatchToken GemvOutPlace::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -20,10 +20,10 @@ namespace soclblas{
         std::size_t argsSize
     ){
         GemmOutPlaceArguments m_args = convertGemvToGemm(*(GemvOutPlaceArguments*)args);
-        gemm.execute(inputs, inouts, outputs, &m_args, sizeof(GemmOutPlaceArguments));
+        return gemm.execute(inputs, inouts, outputs, &m_args, sizeof(GemmOutPlaceArguments));
     }
 
-    void GemvOutPlace::operator()(
+    socl::DispatchToken GemvOutPlace::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
@@ -31,10 +31,10 @@ namespace soclblas{
         const GemvOutPlaceArguments& args
     ){
         GemmOutPlaceArguments m_args = convertGemvToGemm(args);
-        gemm(A,B,C,outC,m_args);
+        return gemm(A,B,C,outC,m_args);
     }
 
-    void GemvOutPlace::operator()(
+    socl::DispatchToken GemvOutPlace::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
@@ -42,6 +42,6 @@ namespace soclblas{
         const GemvArguments& args
     ){
         const GemvOutPlaceArguments outPlaceArgs = GemvOutPlaceArguments::sameOutputLayout(args);
-        (*this)(A, B, C, outC, outPlaceArgs);
+        return (*this)(A, B, C, outC, outPlaceArgs);
     }
 }

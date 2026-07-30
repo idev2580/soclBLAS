@@ -40,7 +40,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void AxpyOutPlaceFP32::execute(
+    socl::DispatchToken AxpyOutPlaceFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -61,10 +61,10 @@ namespace soclblas{
         const uint32_t group_cnt =
             axpyArgs->n / thread_num + (axpyArgs->n % thread_num == 0 ? 0 : 1);
         ctx.dispatch(axpyArgs->b, group_cnt, 1);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
 
-    void AxpyOutPlaceFP32::operator()(
+    socl::DispatchToken AxpyOutPlaceFP32::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer outB,
@@ -73,10 +73,10 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {A, B};
         std::vector<socl::Buffer> inouts = {};
         std::vector<socl::Buffer> outputs = {outB};
-        this->execute(inputs, inouts, outputs, &args, sizeof(AxpyOutPlaceArguments));
+        return this->execute(inputs, inouts, outputs, &args, sizeof(AxpyOutPlaceArguments));
     }
 
-    void AxpyOutPlaceFP32::operator()(
+    socl::DispatchToken AxpyOutPlaceFP32::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer outB,
@@ -84,6 +84,6 @@ namespace soclblas{
     ){
         const AxpyOutPlaceArguments outPlaceArgs =
             AxpyOutPlaceArguments::sameOutputLayout(args);
-        (*this)(A, B, outB, outPlaceArgs);
+        return (*this)(A, B, outB, outPlaceArgs);
     }
 }

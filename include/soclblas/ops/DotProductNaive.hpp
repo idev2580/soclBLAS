@@ -18,7 +18,7 @@ namespace soclblas{
             uint32_t thread_num = 32
         );
 
-        virtual void execute(
+        virtual socl::DispatchToken execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -26,7 +26,7 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual void operator()(
+        virtual socl::DispatchToken operator()(
             socl::Buffer a,
             socl::Buffer b,
             socl::Buffer out,

@@ -93,7 +93,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void GemmSharedFP32::execute(
+    socl::DispatchToken GemmSharedFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -116,10 +116,10 @@ namespace soclblas{
         const uint32_t tiled_p =
             (gemmArgs->p / block_p) + (gemmArgs->p % block_p != 0);
         ctx.dispatch(gemmArgs->b, tiled_m, tiled_p);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
 
-    void GemmSharedFP32::operator()(
+    socl::DispatchToken GemmSharedFP32::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
@@ -128,6 +128,6 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {A, B};
         std::vector<socl::Buffer> inouts = {C};
         std::vector<socl::Buffer> outputs = {};
-        this->execute(inputs, inouts, outputs, &args, sizeof(GemmArguments));
+        return this->execute(inputs, inouts, outputs, &args, sizeof(GemmArguments));
     }
 }

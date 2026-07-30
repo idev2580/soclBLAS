@@ -139,7 +139,8 @@ TEST(AxpyOutPlaceTest, SupportsBatchAndDistinctStrides){
         .out_b_n_stride = out_b_n_stride
     };
 
-    axpy(bufferA, bufferB, bufferOutB, args);
+    auto token = axpy(bufferA, bufferB, bufferOutB, args);
+    token.wait();
     bufferB.read(b.data(), sizeof(float) * b.size());
     bufferOutB.read(out_b.data(), sizeof(float) * out_b.size());
 
@@ -246,7 +247,8 @@ void run_matmul_test(const char* op_name){
             .c_m_stride = is_c_trans ? 1 : p,
             .c_p_stride = is_c_trans ? m : 1
         };
-        matmul(bufferA, bufferB, bufferC, matmul_args);
+        auto token = matmul(bufferA, bufferB, bufferC, matmul_args);
+        token.wait();
         bufferC.read(c.data(), sizeof(float) * batch * m * p);
 
         const bool matmul_res = is_equal_tensor(c, expected_c);
@@ -347,7 +349,8 @@ TEST(GEMMTest, BasicAssertion){
             .c_m_stride = is_c_trans ? 1 : p,
             .c_p_stride = is_c_trans ? m : 1
         };
-        gemm(bufferA, bufferB, bufferC, gemm_args);
+        auto token = gemm(bufferA, bufferB, bufferC, gemm_args);
+        token.wait();
         bufferC.read(c.data(), sizeof(float) * batch * m * p);
         // Test!
         const bool gemm_res = is_equal_tensor(c, cpu_c);
@@ -416,7 +419,8 @@ TEST(GemvNaiveTest, BasicAssertion){
         };
         run_cpu_gemv(gemv_args, a, x, cpu_y);
 
-        gemv(bufferA, bufferX, bufferY, gemv_args);
+        auto token = gemv(bufferA, bufferX, bufferY, gemv_args);
+        token.wait();
         bufferY.read(y.data(), sizeof(float) * batch * m);
 
         const bool gemv_res = is_equal_tensor(y, cpu_y);
@@ -498,7 +502,8 @@ TEST(GemmOutPlaceNaiveTest, BasicAssertion){
             .c_m_stride = is_c_trans ? 1 : p,
             .c_p_stride = is_c_trans ? m : 1
         };
-        gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args);
+        auto token = gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args);
+        token.wait();
         bufferOutC.read(out_c.data(), sizeof(float) * batch * m * p);
         bufferC.read(c.data(), sizeof(float) * batch * m * p);
 
@@ -592,7 +597,8 @@ TEST(GemmOutPlaceNaiveTest, SupportsDistinctOutputStride){
     gemm_args.out_c_m_stride = out_m_stride;
     gemm_args.out_c_p_stride = out_p_stride;
 
-    gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args);
+    auto gemm_token = gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args);
+    gemm_token.wait();
     bufferOutC.read(out_c.data(), sizeof(float) * out_c.size());
     bufferC.read(c.data(), sizeof(float) * c.size());
 
@@ -662,7 +668,8 @@ TEST(GemvOutPlaceNaiveTest, BasicAssertion){
         };
         run_cpu_gemv(gemv_args, a, x, cpu_y);
 
-        gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_args);
+        auto token = gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_args);
+        token.wait();
         bufferOutY.read(out_y.data(), sizeof(float) * batch * m);
         bufferY.read(y.data(), sizeof(float) * batch * m);
 
@@ -750,7 +757,8 @@ TEST(GemvOutPlaceNaiveTest, SupportsDistinctOutputStride){
     gemv_out_args.out_y_m_stride = out_y_m_stride;
     gemv_out_args.out_y_b_stride = out_y_b_stride;
 
-    gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_out_args);
+    auto gemv_token = gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_out_args);
+    gemv_token.wait();
     bufferOutY.read(out_y.data(), sizeof(float) * out_y.size());
     bufferY.read(y.data(), sizeof(float) * y.size());
 
@@ -827,7 +835,8 @@ TEST(ReductionNaiveTest, ComputesDotProductWithBatchStrides){
         .out_n_stride = out_n_stride
     };
 
-    dot(bufferA, bufferB, bufferOut, args);
+    auto dot_token = dot(bufferA, bufferB, bufferOut, args);
+    dot_token.wait();
     bufferOut.read(out.data(), sizeof(float) * out.size());
 
     EXPECT_TRUE(is_equal_tensor(out, expected_out));
@@ -892,8 +901,10 @@ TEST(ReductionNaiveTest, ComputesSumAndAvgWithBatchStrides){
         .out_n_stride = out_n_stride
     };
 
-    sum(bufferA, bufferSumOut, args);
-    avg(bufferA, bufferAvgOut, args);
+    auto sum_token = sum(bufferA, bufferSumOut, args);
+    sum_token.wait();
+    auto avg_token = avg(bufferA, bufferAvgOut, args);
+    avg_token.wait();
 
     bufferSumOut.read(sum_out.data(), sizeof(float) * sum_out.size());
     bufferAvgOut.read(avg_out.data(), sizeof(float) * avg_out.size());
@@ -987,8 +998,10 @@ TEST(ReductionNaiveTest, ComputesMaxAndMinValuesAndIndices){
         .out_index_n_stride = out_index_n_stride
     };
 
-    max(bufferA, bufferMaxValues, bufferMaxIndices, args);
-    min(bufferA, bufferMinValues, bufferMinIndices, args);
+    auto max_token = max(bufferA, bufferMaxValues, bufferMaxIndices, args);
+    max_token.wait();
+    auto min_token = min(bufferA, bufferMinValues, bufferMinIndices, args);
+    min_token.wait();
 
     bufferMaxValues.read(max_values.data(), sizeof(float) * max_values.size());
     bufferMinValues.read(min_values.data(), sizeof(float) * min_values.size());

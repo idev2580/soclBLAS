@@ -1,35 +1,32 @@
 #pragma once
 #include "socl/Buffer.hpp"
+#include "socl/Context.hpp"
 #include "socl/DescriptorSet.hpp"
-#include <cstdint>
-#include <socl/Context.hpp>
-#include <soclblas/ops/Operator.hpp>
 #include <soclblas/ops/GemmArguments.hpp>
+#include <soclblas/ops/Operator.hpp>
 
 namespace soclblas{
-    class Gemm: public Operator{
+    class GemmContiguousNaiveFP32: public Operator{
         private:
         socl::Context& ctx;
         socl::ShaderPipeline pipeline;
         socl::DescriptorSet descSet;
-
-        uint32_t tile_m;
-        uint32_t tile_n;
-        uint32_t tile_p;
-
-        protected:
-        Gemm(
-            socl::Context& ctx
-        );
+        uint32_t block_m;
+        uint32_t block_n;
+        uint32_t block_p;
+        uint32_t thread_tile_m;
+        uint32_t thread_tile_p;
 
         public:
-        Gemm(
+        GemmContiguousNaiveFP32(
             socl::Context& ctx,
-            std::span<const uint32_t> shaderBytecodes,
-            uint32_t tile_m = 8,
-            uint32_t tile_n = 4,
-            uint32_t tile_p = 4
+            uint32_t block_m = 64,
+            uint32_t block_n = 16,
+            uint32_t block_p = 64,
+            uint32_t thread_tile_m = 4,
+            uint32_t thread_tile_p = 4
         );
+
         virtual socl::DispatchToken execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
@@ -42,7 +39,7 @@ namespace soclblas{
             socl::Buffer A,
             socl::Buffer B,
             socl::Buffer C,
-            const GemmArguments& args
+            const GemmContiguousArguments& args
         );
     };
 }

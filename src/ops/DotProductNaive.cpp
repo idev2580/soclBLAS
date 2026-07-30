@@ -22,7 +22,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void DotProductNaiveFP32::execute(
+    socl::DispatchToken DotProductNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -42,10 +42,10 @@ namespace soclblas{
         const BinaryReductionArguments* reductionArgs =
             (const BinaryReductionArguments*)args;
         ctx.dispatch(reductionArgs->b, 1, 1);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
 
-    void DotProductNaiveFP32::operator()(
+    socl::DispatchToken DotProductNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer b,
         socl::Buffer out,
@@ -54,6 +54,6 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {a, b};
         std::vector<socl::Buffer> inouts = {};
         std::vector<socl::Buffer> outputs = {out};
-        this->execute(inputs, inouts, outputs, &args, sizeof(BinaryReductionArguments));
+        return this->execute(inputs, inouts, outputs, &args, sizeof(BinaryReductionArguments));
     }
 }

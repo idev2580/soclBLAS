@@ -16,7 +16,7 @@ namespace soclblas{
             uint32_t tile_n = 4,
             uint32_t tile_p = 4
         );
-        virtual void execute(
+        virtual socl::DispatchToken execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -24,7 +24,7 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual void operator()(
+        virtual socl::DispatchToken operator()(
             socl::Buffer A,
             socl::Buffer X,
             socl::Buffer Y,

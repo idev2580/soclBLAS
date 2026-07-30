@@ -29,7 +29,7 @@ namespace soclblas{
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
-    void Gemm::execute(
+    socl::DispatchToken Gemm::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -53,9 +53,9 @@ namespace soclblas{
         const uint32_t tiled_m = (gemmArgs->m / tile_r_size) + (gemmArgs->m % tile_r_size != 0);
         const uint32_t tiled_p = (gemmArgs->p / tile_c_size) + (gemmArgs->p % tile_c_size != 0);
         ctx.dispatch(gemmArgs->b, tiled_m, tiled_p);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
-    void Gemm::operator()(
+    socl::DispatchToken Gemm::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
@@ -64,6 +64,6 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {A, B};
         std::vector<socl::Buffer> inouts = {C};
         std::vector<socl::Buffer> outputs = {};
-        this->execute(inputs, inouts, outputs, &args, sizeof(GemmArguments));
+        return this->execute(inputs, inouts, outputs, &args, sizeof(GemmArguments));
     }
 }

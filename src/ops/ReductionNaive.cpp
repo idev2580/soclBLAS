@@ -25,7 +25,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void MaxNaiveFP32::execute(
+    socl::DispatchToken MaxNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -45,10 +45,10 @@ namespace soclblas{
         const IndexedUnaryReductionArguments* reductionArgs =
             (const IndexedUnaryReductionArguments*)args;
         ctx.dispatch(reductionArgs->b, 1, 1);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
 
-    void MaxNaiveFP32::operator()(
+    socl::DispatchToken MaxNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer outValue,
         socl::Buffer outIndex,
@@ -57,7 +57,7 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {a};
         std::vector<socl::Buffer> inouts = {};
         std::vector<socl::Buffer> outputs = {outValue, outIndex};
-        this->execute(
+        return this->execute(
             inputs,
             inouts,
             outputs,
@@ -85,7 +85,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void MinNaiveFP32::execute(
+    socl::DispatchToken MinNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -105,10 +105,10 @@ namespace soclblas{
         const IndexedUnaryReductionArguments* reductionArgs =
             (const IndexedUnaryReductionArguments*)args;
         ctx.dispatch(reductionArgs->b, 1, 1);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
 
-    void MinNaiveFP32::operator()(
+    socl::DispatchToken MinNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer outValue,
         socl::Buffer outIndex,
@@ -117,7 +117,7 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {a};
         std::vector<socl::Buffer> inouts = {};
         std::vector<socl::Buffer> outputs = {outValue, outIndex};
-        this->execute(
+        return this->execute(
             inputs,
             inouts,
             outputs,
@@ -144,7 +144,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void AvgNaiveFP32::execute(
+    socl::DispatchToken AvgNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -163,10 +163,10 @@ namespace soclblas{
         const UnaryReductionArguments* reductionArgs =
             (const UnaryReductionArguments*)args;
         ctx.dispatch(reductionArgs->b, 1, 1);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
 
-    void AvgNaiveFP32::operator()(
+    socl::DispatchToken AvgNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer out,
         const UnaryReductionArguments& args
@@ -174,7 +174,7 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {a};
         std::vector<socl::Buffer> inouts = {};
         std::vector<socl::Buffer> outputs = {out};
-        this->execute(inputs, inouts, outputs, &args, sizeof(UnaryReductionArguments));
+        return this->execute(inputs, inouts, outputs, &args, sizeof(UnaryReductionArguments));
     }
 
     SumNaiveFP32::SumNaiveFP32(
@@ -195,7 +195,7 @@ namespace soclblas{
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    void SumNaiveFP32::execute(
+    socl::DispatchToken SumNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -214,10 +214,10 @@ namespace soclblas{
         const UnaryReductionArguments* reductionArgs =
             (const UnaryReductionArguments*)args;
         ctx.dispatch(reductionArgs->b, 1, 1);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
 
-    void SumNaiveFP32::operator()(
+    socl::DispatchToken SumNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer out,
         const UnaryReductionArguments& args
@@ -225,6 +225,6 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {a};
         std::vector<socl::Buffer> inouts = {};
         std::vector<socl::Buffer> outputs = {out};
-        this->execute(inputs, inouts, outputs, &args, sizeof(UnaryReductionArguments));
+        return this->execute(inputs, inouts, outputs, &args, sizeof(UnaryReductionArguments));
     }
 }

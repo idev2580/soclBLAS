@@ -37,7 +37,7 @@ namespace soclblas{
 
     class UnaryReduction: public Operator{
         public:
-        virtual void operator()(
+        virtual socl::DispatchToken operator()(
             socl::Buffer a,
             socl::Buffer out,
             const UnaryReductionArguments& args
@@ -46,7 +46,7 @@ namespace soclblas{
 
     class BinaryReduction: public Operator{
         public:
-        virtual void operator()(
+        virtual socl::DispatchToken operator()(
             socl::Buffer a,
             socl::Buffer b,
             socl::Buffer out,
@@ -56,7 +56,7 @@ namespace soclblas{
 
     class IndexedUnaryReduction: public Operator{
         public:
-        virtual void operator()(
+        virtual socl::DispatchToken operator()(
             socl::Buffer a,
             socl::Buffer outValue,
             socl::Buffer outIndex,

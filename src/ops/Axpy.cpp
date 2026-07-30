@@ -20,7 +20,7 @@ namespace soclblas{
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
     }
-    void AxpyFP32::execute(
+    socl::DispatchToken AxpyFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -39,9 +39,9 @@ namespace soclblas{
         AxpyArguments* axpyArgs = (AxpyArguments*)args;
         const uint32_t group_cnt = axpyArgs->n / thread_num + (axpyArgs->n % thread_num == 0 ? 0 : 1);
         ctx.dispatch(axpyArgs->b, group_cnt, 1);
-        ctx.submitAndWait();
+        return ctx.submitAsync();
     }
-    void AxpyFP32::operator()(
+    socl::DispatchToken AxpyFP32::operator()(
         socl::Buffer A,
         socl::Buffer B,
         const AxpyArguments& args
@@ -49,6 +49,6 @@ namespace soclblas{
         std::vector<socl::Buffer> inputs = {A};
         std::vector<socl::Buffer> inouts = {B};
         std::vector<socl::Buffer> outputs = {};
-        this->execute(inputs, inouts, outputs, &args, sizeof(AxpyArguments));
+        return this->execute(inputs, inouts, outputs, &args, sizeof(AxpyArguments));
     }
 }
