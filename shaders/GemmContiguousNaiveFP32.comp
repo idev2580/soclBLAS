@@ -44,8 +44,8 @@ layout(push_constant) uniform constants {
     uint flags;
 } args;
 
-const uint max_thread_tile_m = 8;
-const uint max_thread_tile_p = 8;
+const uint max_subgroup_a_register_count = 8;
+const uint max_subgroup_b_register_count = 8;
 const uint thread_accum_count = thread_tile_m * thread_tile_p;
 const uint subgroup_width = 32;
 const uint local_count_32 = local_m_cnt * local_p_cnt;
@@ -55,11 +55,11 @@ const uint subgroup_cols = block_p / subgroup_count_32;
 const uint subgroup_rows_per_lane = block_m / subgroup_width;
 const uint subgroup_cols_per_lane = block_p / subgroup_width;
 const uint subgroup_a_register_count =
-    subgroup_rows_per_lane > 0 && subgroup_rows_per_lane <= max_thread_tile_m
+    subgroup_rows_per_lane > 0 && subgroup_rows_per_lane <= max_subgroup_a_register_count
         ? subgroup_rows_per_lane
         : 1;
 const uint subgroup_b_register_count =
-    subgroup_cols_per_lane > 0 && subgroup_cols_per_lane <= max_thread_tile_p
+    subgroup_cols_per_lane > 0 && subgroup_cols_per_lane <= max_subgroup_b_register_count
         ? subgroup_cols_per_lane
         : 1;
 
@@ -215,7 +215,7 @@ bool can_use_row_subgroup_outer() {
         subgroup_rows > 0 &&
         subgroup_rows <= subgroup_width &&
         subgroup_cols_per_lane > 0 &&
-        subgroup_cols_per_lane <= max_thread_tile_p &&
+        subgroup_cols_per_lane <= max_subgroup_b_register_count &&
         subgroup_rows * subgroup_cols_per_lane == thread_accum_count;
 }
 
@@ -227,7 +227,7 @@ bool can_use_col_subgroup_outer() {
         block_m % subgroup_width == 0 &&
         block_p % subgroup_count_32 == 0 &&
         subgroup_rows_per_lane > 0 &&
-        subgroup_rows_per_lane <= max_thread_tile_m &&
+        subgroup_rows_per_lane <= max_subgroup_a_register_count &&
         subgroup_cols > 0 &&
         subgroup_cols <= subgroup_width &&
         subgroup_rows_per_lane * subgroup_cols == thread_accum_count;
@@ -432,9 +432,10 @@ void run_thread_outer(
 }
 
 void main() {
-    const uint batch_id = gl_WorkGroupID.x;
+    // Match the P-major dispatch order used by the host.
+    const uint block_p_id = gl_WorkGroupID.x;
     const uint block_m_id = gl_WorkGroupID.y;
-    const uint block_p_id = gl_WorkGroupID.z;
+    const uint batch_id = gl_WorkGroupID.z;
     const uint local_id = gl_LocalInvocationIndex;
     const bool a_trans = (args.flags & flag_a_trans) != 0;
     const bool b_trans = (args.flags & flag_b_trans) != 0;

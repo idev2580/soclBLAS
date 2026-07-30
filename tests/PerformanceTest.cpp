@@ -12,9 +12,33 @@
 #include <socl/Context.hpp>
 #include <soclblas/ops/GemmContiguousNaive.hpp>
 #include <soclblas/ops/GemmShared.hpp>
-
+/* Argument sweep targets
+ *
+ * build/socl_performance_test --cont batch M N P tile_m tile_n tile_p thread_tile_m thread_tile_p iterations
+ * Current best (Shared Memory 32KiB limit) : 
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 16 256 8 8 2
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 16 256 16 4 20
+ * Current best (Shared Memory 64KiB limit) : ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 16 256 8 8 20
+ *
+ * 1. Shared Memory
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 32 128 8 8 20
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 16 128 8 8 20
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 8 128 8 8 20
+ *
+ * 2. Tile reusage
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 8 8 20
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 128 8 8 20
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 32 64 8 8 20
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 32 128 8 8 20
+ *
+ * 3. Register occupancy
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 4 4 20
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 8 4 20
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 4 8 20
+ * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 8 8 20
+ */
 namespace {
-    constexpr int gpu_idx = 1;
+    constexpr int gpu_idx = 0;
     enum class GemmPerfMode {
         Shared,
         Contiguous
@@ -91,9 +115,15 @@ namespace {
         return parsed;
     }
 
-    void validate_tile_config(const GemmPerfConfig& config) {
-        if(config.thread_tile_m > 8 || config.thread_tile_p > 8) {
-            throw std::out_of_range("thread_tile_m and thread_tile_p must be less than or equal to 8");
+    void validate_tile_config(GemmPerfMode mode, const GemmPerfConfig& config) {
+        const uint64_t thread_accum_count =
+            uint64_t(config.thread_tile_m) * uint64_t(config.thread_tile_p);
+        if(mode == GemmPerfMode::Shared) {
+            if(config.thread_tile_m > 8 || config.thread_tile_p > 8) {
+                throw std::out_of_range("shared GEMM thread tile dimensions must be less than or equal to 8");
+            }
+        } else if(thread_accum_count > 128) {
+            throw std::out_of_range("contiguous GEMM thread tile must contain at most 128 output elements");
         }
 
         if(config.tile_m % config.thread_tile_m != 0 || config.tile_p % config.thread_tile_p != 0) {
@@ -111,8 +141,14 @@ namespace {
             uint64_t(config.tile_m) * uint64_t(config.tile_n) +
             uint64_t(config.tile_n) * uint64_t(config.tile_p);
         const uint64_t shared_bytes = shared_elements * sizeof(float);
-        if(shared_bytes > 32ull * 1024ull) {
-            throw std::out_of_range("shared memory tile must be less than or equal to 32 KiB");
+        const uint64_t max_shared_bytes =
+            mode == GemmPerfMode::Contiguous ? 64ull * 1024ull : 32ull * 1024ull;
+        if(shared_bytes > max_shared_bytes) {
+            throw std::out_of_range(
+                mode == GemmPerfMode::Contiguous
+                    ? "contiguous GEMM shared memory tile must be less than or equal to 64 KiB"
+                    : "shared GEMM shared memory tile must be less than or equal to 32 KiB"
+            );
         }
     }
 
@@ -242,7 +278,7 @@ namespace {
         std::vector<float> c(static_cast<size_t>(c_elements), 0.0f);
 
         socl::Context ctx({gpu_idx});
-        ctx.printGpuInfo(std::cout);
+        // ctx.printGpuInfo(std::cout);
         soclblas::GemmSharedFP32 gemm(
             ctx,
             config.tile_m,
@@ -313,7 +349,7 @@ namespace {
         std::vector<float> c(static_cast<size_t>(c_elements), 0.0f);
 
         socl::Context ctx({gpu_idx});
-        ctx.printGpuInfo(std::cout);
+        // ctx.printGpuInfo(std::cout);
         soclblas::GemmContiguousNaiveFP32 gemm(
             ctx,
             config.tile_m,
@@ -372,7 +408,7 @@ int main(int argc, char** argv) {
 
         const ParsedArgs parsed = parse_args(argc, argv);
         const GemmPerfConfig& config = parsed.config;
-        validate_tile_config(config);
+        validate_tile_config(parsed.mode, config);
         if(parsed.mode == GemmPerfMode::Contiguous) {
             test_cont_gemm(config);
         } else {

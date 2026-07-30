@@ -6,8 +6,8 @@
 
 namespace soclblas{
     namespace {
-        constexpr uint32_t max_thread_tile_m = 8;
-        constexpr uint32_t max_thread_tile_p = 8;
+        constexpr uint64_t max_thread_accum_count = 128;
+        constexpr uint64_t max_shared_memory_bytes = 64ull * 1024ull;
 
         void validate_gemm_contiguous_config(
             uint32_t block_m,
@@ -31,14 +31,12 @@ namespace soclblas{
             if(
                 block_m % 4 != 0 ||
                 block_n % 4 != 0 ||
-                block_p % 4 != 0 ||
-                thread_tile_m % 4 != 0 ||
-                thread_tile_p % 4 != 0
+                block_p % 4 != 0
             ) {
-                throw std::invalid_argument("GemmContiguousNaiveFP32 block and thread tile sizes must be divisible by 4");
+                throw std::invalid_argument("GemmContiguousNaiveFP32 block sizes must be divisible by 4");
             }
-            if(thread_tile_m > max_thread_tile_m || thread_tile_p > max_thread_tile_p) {
-                throw std::invalid_argument("GemmContiguousNaiveFP32 thread tile sizes must be less than or equal to 8");
+            if(uint64_t(thread_tile_m) * uint64_t(thread_tile_p) > max_thread_accum_count) {
+                throw std::invalid_argument("GemmContiguousNaiveFP32 thread tile must contain at most 128 output elements");
             }
 
             const uint32_t local_m = block_m / thread_tile_m;
@@ -50,8 +48,8 @@ namespace soclblas{
             const uint64_t shared_elements =
                 uint64_t(block_m) * uint64_t(block_n) +
                 uint64_t(block_n) * uint64_t(block_p);
-            if(shared_elements * sizeof(float) > 32ull * 1024ull) {
-                throw std::invalid_argument("GemmContiguousNaiveFP32 shared memory usage must be less than or equal to 32 KiB");
+            if(shared_elements * sizeof(float) > max_shared_memory_bytes) {
+                throw std::invalid_argument("GemmContiguousNaiveFP32 shared memory usage must be less than or equal to 64 KiB");
             }
         }
 
@@ -153,7 +151,9 @@ namespace soclblas{
 
         const uint32_t tiled_m = gemmArgs->m / block_m;
         const uint32_t tiled_p = gemmArgs->p / block_p;
-        ctx.dispatch(gemmArgs->b, tiled_m, tiled_p);
+        // Map P to X to favor A-tile cache reuse on implementations that
+        // schedule neighboring X workgroups close together.
+        ctx.dispatch(tiled_p, tiled_m, gemmArgs->b);
         return ctx.submitAsync();
     }
 

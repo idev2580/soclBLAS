@@ -159,9 +159,24 @@ TEST(PerformanceShaderCorrectnessTest, GemmSharedMatchesNaiveForStridedEdgeTiles
 }
 
 TEST(PerformanceShaderCorrectnessTest, GemmContiguousMatchesNaiveForAllLayouts) {
+    struct TestConfig {
+        uint32_t block_m;
+        uint32_t block_n;
+        uint32_t block_p;
+        uint32_t thread_tile_m;
+        uint32_t thread_tile_p;
+    };
+    constexpr TestConfig configs[] = {
+        {128, 32, 128, 8, 8},
+        {128, 16, 128, 16, 4},
+        {128, 16, 128, 4, 16},
+        {128, 16, 256, 8, 16},
+        {64, 16, 64, 8, 2},
+        {256, 24, 128, 16, 8},
+    };
     constexpr uint32_t batch = 2;
     constexpr uint32_t m = 256;
-    constexpr uint32_t n = 64;
+    constexpr uint32_t n = 96;
     constexpr uint32_t p = 256;
     constexpr uint32_t a_stride = m * n;
     constexpr uint32_t b_stride = n * p;
@@ -169,14 +184,6 @@ TEST(PerformanceShaderCorrectnessTest, GemmContiguousMatchesNaiveForAllLayouts) 
 
     socl::Context context;
     soclblas::GemmNaiveFP32 reference_gemm(context, 8, 4, 4);
-    soclblas::GemmContiguousNaiveFP32 tested_gemm(
-        context,
-        block_m,
-        block_n,
-        block_p,
-        thread_tile_m,
-        thread_tile_p
-    );
 
     std::vector<float> a(std::size_t(batch) * a_stride);
     std::vector<float> b(std::size_t(batch) * b_stride);
@@ -192,73 +199,89 @@ TEST(PerformanceShaderCorrectnessTest, GemmContiguousMatchesNaiveForAllLayouts) 
         context.createBuffer(actual_c.size() * sizeof(float), socl::BufferType::Auto);
 
     std::mt19937 generator(2580);
-    for(uint32_t flags = 0; flags <= soclblas::GemmContiguousFlagsMask; flags++) {
-        const bool a_transposed = (flags & soclblas::GemmContiguousFlagATransposed) != 0;
-        const bool b_transposed = (flags & soclblas::GemmContiguousFlagBTransposed) != 0;
-        const bool c_transposed = (flags & soclblas::GemmContiguousFlagCTransposed) != 0;
+    for(const TestConfig& config : configs) {
         SCOPED_TRACE(
             testing::Message()
-                << "flags=" << flags
-                << ", A_transposed=" << a_transposed
-                << ", B_transposed=" << b_transposed
-                << ", C_transposed=" << c_transposed
+                << "block=" << config.block_m << "x" << config.block_n << "x" << config.block_p
+                << ", thread_tile=" << config.thread_tile_m << "x" << config.thread_tile_p
+        );
+        soclblas::GemmContiguousNaiveFP32 tested_gemm(
+            context,
+            config.block_m,
+            config.block_n,
+            config.block_p,
+            config.thread_tile_m,
+            config.thread_tile_p
         );
 
-        fill_random(a, generator);
-        fill_random(b, generator);
-        fill_random(initial_c, generator);
-        expected_c = initial_c;
-        actual_c = initial_c;
+        for(uint32_t flags = 0; flags <= soclblas::GemmContiguousFlagsMask; flags++) {
+            const bool a_transposed = (flags & soclblas::GemmContiguousFlagATransposed) != 0;
+            const bool b_transposed = (flags & soclblas::GemmContiguousFlagBTransposed) != 0;
+            const bool c_transposed = (flags & soclblas::GemmContiguousFlagCTransposed) != 0;
+            SCOPED_TRACE(
+                testing::Message()
+                    << "flags=" << flags
+                    << ", A_transposed=" << a_transposed
+                    << ", B_transposed=" << b_transposed
+                    << ", C_transposed=" << c_transposed
+            );
 
-        buffer_a.write(a.data(), a.size() * sizeof(float));
-        buffer_b.write(b.data(), b.size() * sizeof(float));
-        buffer_expected_c.write(expected_c.data(), expected_c.size() * sizeof(float));
-        buffer_actual_c.write(actual_c.data(), actual_c.size() * sizeof(float));
+            fill_random(a, generator);
+            fill_random(b, generator);
+            fill_random(initial_c, generator);
+            expected_c = initial_c;
+            actual_c = initial_c;
 
-        const float alpha = a_transposed ? 0.75f : 1.0f;
-        const float beta = b_transposed ? -0.25f : 0.0f;
-        const soclblas::GemmArguments reference_arguments = {
-            .b = batch,
-            .m = m,
-            .n = n,
-            .p = p,
-            .alpha = alpha,
-            .beta = beta,
-            .a_stride = a_stride,
-            .b_stride = b_stride,
-            .c_stride = c_stride,
-            .a_m_stride = a_transposed ? 1u : n,
-            .a_n_stride = a_transposed ? m : 1u,
-            .b_n_stride = b_transposed ? 1u : p,
-            .b_p_stride = b_transposed ? n : 1u,
-            .c_m_stride = c_transposed ? 1u : p,
-            .c_p_stride = c_transposed ? m : 1u
-        };
-        const soclblas::GemmContiguousArguments tested_arguments = {
-            .b = batch,
-            .m = m,
-            .n = n,
-            .p = p,
-            .alpha = alpha,
-            .beta = beta,
-            .a_stride = a_stride,
-            .b_stride = b_stride,
-            .c_stride = c_stride,
-            .a_major_stride = a_transposed ? m : n,
-            .b_major_stride = b_transposed ? n : p,
-            .c_major_stride = c_transposed ? m : p,
-            .flags = flags
-        };
+            buffer_a.write(a.data(), a.size() * sizeof(float));
+            buffer_b.write(b.data(), b.size() * sizeof(float));
+            buffer_expected_c.write(expected_c.data(), expected_c.size() * sizeof(float));
+            buffer_actual_c.write(actual_c.data(), actual_c.size() * sizeof(float));
 
-        auto reference_token =
-            reference_gemm(buffer_a, buffer_b, buffer_expected_c, reference_arguments);
-        reference_token.wait();
-        auto tested_token = tested_gemm(buffer_a, buffer_b, buffer_actual_c, tested_arguments);
-        tested_token.wait();
+            const float alpha = a_transposed ? 0.75f : 1.0f;
+            const float beta = b_transposed ? -0.25f : 0.0f;
+            const soclblas::GemmArguments reference_arguments = {
+                .b = batch,
+                .m = m,
+                .n = n,
+                .p = p,
+                .alpha = alpha,
+                .beta = beta,
+                .a_stride = a_stride,
+                .b_stride = b_stride,
+                .c_stride = c_stride,
+                .a_m_stride = a_transposed ? 1u : n,
+                .a_n_stride = a_transposed ? m : 1u,
+                .b_n_stride = b_transposed ? 1u : p,
+                .b_p_stride = b_transposed ? n : 1u,
+                .c_m_stride = c_transposed ? 1u : p,
+                .c_p_stride = c_transposed ? m : 1u
+            };
+            const soclblas::GemmContiguousArguments tested_arguments = {
+                .b = batch,
+                .m = m,
+                .n = n,
+                .p = p,
+                .alpha = alpha,
+                .beta = beta,
+                .a_stride = a_stride,
+                .b_stride = b_stride,
+                .c_stride = c_stride,
+                .a_major_stride = a_transposed ? m : n,
+                .b_major_stride = b_transposed ? n : p,
+                .c_major_stride = c_transposed ? m : p,
+                .flags = flags
+            };
 
-        buffer_expected_c.read(expected_c.data(), expected_c.size() * sizeof(float));
-        buffer_actual_c.read(actual_c.data(), actual_c.size() * sizeof(float));
+            auto reference_token =
+                reference_gemm(buffer_a, buffer_b, buffer_expected_c, reference_arguments);
+            reference_token.wait();
+            auto tested_token = tested_gemm(buffer_a, buffer_b, buffer_actual_c, tested_arguments);
+            tested_token.wait();
 
-        EXPECT_TRUE(tensors_near(expected_c, actual_c));
+            buffer_expected_c.read(expected_c.data(), expected_c.size() * sizeof(float));
+            buffer_actual_c.read(actual_c.data(), actual_c.size() * sizeof(float));
+
+            EXPECT_TRUE(tensors_near(expected_c, actual_c));
+        }
     }
 }
