@@ -1,4 +1,7 @@
 #version 460
+#extension GL_EXT_control_flow_attributes: enable
+#extension GL_KHR_shader_subgroup_basic: require
+#extension GL_KHR_shader_subgroup_shuffle: require
 
 // Contiguous/aligned shared-memory FP32 GEMM.
 layout(constant_id = 0) const uint block_m = 64;
@@ -43,13 +46,29 @@ layout(push_constant) uniform constants {
 
 const uint max_thread_tile_m = 8;
 const uint max_thread_tile_p = 8;
-const uint max_thread_accum = max_thread_tile_m * max_thread_tile_p;
+const uint thread_accum_count = thread_tile_m * thread_tile_p;
+const uint subgroup_width = 32;
+const uint local_count_32 = local_m_cnt * local_p_cnt;
+const uint subgroup_count_32 = (local_count_32 + subgroup_width - 1) / subgroup_width;
+const uint subgroup_rows = block_m / subgroup_count_32;
+const uint subgroup_cols = block_p / subgroup_count_32;
+const uint subgroup_rows_per_lane = block_m / subgroup_width;
+const uint subgroup_cols_per_lane = block_p / subgroup_width;
+const uint subgroup_a_register_count =
+    subgroup_rows_per_lane > 0 && subgroup_rows_per_lane <= max_thread_tile_m
+        ? subgroup_rows_per_lane
+        : 1;
+const uint subgroup_b_register_count =
+    subgroup_cols_per_lane > 0 && subgroup_cols_per_lane <= max_thread_tile_p
+        ? subgroup_cols_per_lane
+        : 1;
 
 const uint flag_a_trans = 1;
 const uint flag_b_trans = 2;
 const uint flag_c_trans = 4;
 
-shared float tile_a[block_m][block_n];
+// K-major A keeps lane-adjacent rows in separate shared-memory banks.
+shared float tile_a[block_n][block_m];
 shared float tile_b[block_n][block_p];
 
 uint get_a_idx(uint batch_id, uint row, uint col) {
@@ -93,17 +112,17 @@ vec4 load_b_trans_vec(uint batch_id, uint row, uint col) {
 }
 
 void store_tile_a_cols(uint row, uint col, vec4 value) {
-    tile_a[row][col] = value.x;
-    tile_a[row][col + 1] = value.y;
-    tile_a[row][col + 2] = value.z;
-    tile_a[row][col + 3] = value.w;
+    tile_a[col][row] = value.x;
+    tile_a[col + 1][row] = value.y;
+    tile_a[col + 2][row] = value.z;
+    tile_a[col + 3][row] = value.w;
 }
 
 void store_tile_a_rows(uint row, uint col, vec4 value) {
-    tile_a[row][col] = value.x;
-    tile_a[row + 1][col] = value.y;
-    tile_a[row + 2][col] = value.z;
-    tile_a[row + 3][col] = value.w;
+    tile_a[col][row] = value.x;
+    tile_a[col][row + 1] = value.y;
+    tile_a[col][row + 2] = value.z;
+    tile_a[col][row + 3] = value.w;
 }
 
 void store_tile_b_cols(uint row, uint col, vec4 value) {
@@ -120,22 +139,6 @@ void store_tile_b_rows(uint row, uint col, vec4 value) {
     tile_b[row + 3][col] = value.w;
 }
 
-float load_c_scalar(uint batch_id, uint row, uint col) {
-    return c[get_c_idx(batch_id, row, col)];
-}
-
-float load_c_trans_scalar(uint batch_id, uint row, uint col) {
-    return c[get_c_trans_idx(batch_id, row, col)];
-}
-
-void store_c_scalar(uint batch_id, uint row, uint col, float value) {
-    c[get_c_idx(batch_id, row, col)] = value;
-}
-
-void store_c_trans_scalar(uint batch_id, uint row, uint col, float value) {
-    c[get_c_trans_idx(batch_id, row, col)] = value;
-}
-
 void load_tile_a(
     uint batch_id,
     uint block_m_id,
@@ -146,8 +149,8 @@ void load_tile_a(
 ) {
     if(a_trans) {
         for(uint load_idx = local_id; load_idx < block_m_d4 * block_n; load_idx += local_count) {
-            const uint load_m = (load_idx / block_n) * 4;
-            const uint load_n = load_idx % block_n;
+            const uint load_m = (load_idx % block_m_d4) * 4;
+            const uint load_n = load_idx / block_m_d4;
             const uint a_row = block_m_id * block_m + load_m;
             const uint a_col = block_n_id * block_n + load_n;
 
@@ -175,8 +178,8 @@ void load_tile_b(
 ) {
     if(b_trans) {
         for(uint load_idx = local_id; load_idx < block_n_d4 * block_p; load_idx += local_count) {
-            const uint load_n = (load_idx / block_p) * 4;
-            const uint load_p = load_idx % block_p;
+            const uint load_n = (load_idx % block_n_d4) * 4;
+            const uint load_p = load_idx / block_n_d4;
             const uint b_row = block_n_id * block_n + load_n;
             const uint b_col = block_p_id * block_p + load_p;
 
@@ -194,117 +197,276 @@ void load_tile_b(
     }
 }
 
-void main() {
-    const uint batch_id = gl_WorkGroupID.x;
-    const uint block_m_id = gl_WorkGroupID.y;
-    const uint block_p_id = gl_WorkGroupID.z;
+void update_c(uint c_idx, float value) {
+    if(args.beta == 0.0) {
+        c[c_idx] = args.alpha == 1.0 ? value : args.alpha * value;
+    } else {
+        c[c_idx] = fma(args.alpha, value, args.beta * c[c_idx]);
+    }
+}
 
-    const uint local_m = gl_LocalInvocationID.x;
-    const uint local_p = gl_LocalInvocationID.y;
-    const uint local_id = local_p * local_m_cnt + local_m;
-    const uint local_count = local_m_cnt * local_p_cnt;
+bool can_use_row_subgroup_outer() {
+    return
+        gl_SubgroupSize == subgroup_width &&
+        gl_NumSubgroups == subgroup_count_32 &&
+        local_count_32 % subgroup_width == 0 &&
+        block_m % subgroup_count_32 == 0 &&
+        block_p % subgroup_width == 0 &&
+        subgroup_rows > 0 &&
+        subgroup_rows <= subgroup_width &&
+        subgroup_cols_per_lane > 0 &&
+        subgroup_cols_per_lane <= max_thread_tile_p &&
+        subgroup_rows * subgroup_cols_per_lane == thread_accum_count;
+}
 
-    const uint block_row_base = local_m * thread_tile_m;
-    const uint block_col_base = local_p * thread_tile_p;
-    const uint global_row_base = block_m_id * block_m + block_row_base;
-    const uint global_col_base = block_p_id * block_p + block_col_base;
+bool can_use_col_subgroup_outer() {
+    return
+        gl_SubgroupSize == subgroup_width &&
+        gl_NumSubgroups == subgroup_count_32 &&
+        local_count_32 % subgroup_width == 0 &&
+        block_m % subgroup_width == 0 &&
+        block_p % subgroup_count_32 == 0 &&
+        subgroup_rows_per_lane > 0 &&
+        subgroup_rows_per_lane <= max_thread_tile_m &&
+        subgroup_cols > 0 &&
+        subgroup_cols <= subgroup_width &&
+        subgroup_rows_per_lane * subgroup_cols == thread_accum_count;
+}
+
+void run_row_subgroup_outer(
+    uint batch_id,
+    uint block_m_id,
+    uint block_p_id,
+    uint local_id,
+    bool a_trans,
+    bool b_trans
+) {
+    const uint lane = gl_SubgroupInvocationID;
+    const uint block_row_base = gl_SubgroupID * subgroup_rows;
+    const uint block_col_base = lane;
     const uint tiled_n_cnt = args.n / block_n;
-    const bool a_trans = (args.flags & flag_a_trans) != 0;
-    const bool b_trans = (args.flags & flag_b_trans) != 0;
-    const bool c_trans = (args.flags & flag_c_trans) != 0;
 
-    float acc[max_thread_accum];
-    for(uint i = 0; i < max_thread_accum; i++) {
+    float acc[thread_accum_count];
+    [[unroll]]
+    for(uint i = 0; i < thread_accum_count; i++) {
         acc[i] = 0.0;
     }
 
     for(uint block_n_id = 0; block_n_id < tiled_n_cnt; block_n_id++) {
-        load_tile_a(batch_id, block_m_id, block_n_id, local_id, local_count, a_trans);
-        load_tile_b(batch_id, block_p_id, block_n_id, local_id, local_count, b_trans);
+        load_tile_a(batch_id, block_m_id, block_n_id, local_id, local_count_32, a_trans);
+        load_tile_b(batch_id, block_p_id, block_n_id, local_id, local_count_32, b_trans);
         barrier();
 
         for(uint n_offset = 0; n_offset < block_n; n_offset++) {
-            float b_vals[max_thread_tile_p];
-            for(uint col = 0; col < thread_tile_p; col++) {
-                b_vals[col] = tile_b[n_offset][block_col_base + col];
+            float b_vals[subgroup_b_register_count];
+            [[unroll]]
+            for(uint col = 0; col < subgroup_cols_per_lane; col++) {
+                b_vals[col] = tile_b[n_offset][block_col_base + col * subgroup_width];
             }
 
-            for(uint row = 0; row < thread_tile_m; row++) {
-                const float a_val = tile_a[block_row_base + row][n_offset];
-                for(uint col = 0; col < thread_tile_p; col++) {
-                    const uint acc_idx = row * max_thread_tile_p + col;
+            float lane_a = 0.0;
+            if(lane < subgroup_rows) {
+                lane_a = tile_a[n_offset][block_row_base + lane];
+            }
+
+            [[unroll]]
+            for(uint row = 0; row < subgroup_rows; row++) {
+                const float a_val = subgroupShuffle(lane_a, row);
+                [[unroll]]
+                for(uint col = 0; col < subgroup_cols_per_lane; col++) {
+                    const uint acc_idx = row * subgroup_cols_per_lane + col;
                     acc[acc_idx] = fma(a_val, b_vals[col], acc[acc_idx]);
                 }
             }
         }
-        barrier();
+
+        if(block_n_id + 1 < tiled_n_cnt) {
+            barrier();
+        }
     }
 
-    if(args.beta == 0.0 && args.alpha == 1.0) {
-        if(c_trans) {
-            for(uint row = 0; row < thread_tile_m; row++) {
-                const uint global_row = global_row_base + row;
+    const uint global_row_base = block_m_id * block_m + block_row_base;
+    const uint global_col_base = block_p_id * block_p + block_col_base;
+    [[unroll]]
+    for(uint row = 0; row < subgroup_rows; row++) {
+        const uint global_row = global_row_base + row;
+        [[unroll]]
+        for(uint col = 0; col < subgroup_cols_per_lane; col++) {
+            const uint global_col = global_col_base + col * subgroup_width;
+            const uint acc_idx = row * subgroup_cols_per_lane + col;
+            update_c(get_c_idx(batch_id, global_row, global_col), acc[acc_idx]);
+        }
+    }
+}
 
-                for(uint col = 0; col < thread_tile_p; col++) {
-                    const uint global_col = global_col_base + col;
-                    const uint acc_idx = row * max_thread_tile_p + col;
-                    store_c_trans_scalar(batch_id, global_row, global_col, acc[acc_idx]);
-                }
+void run_col_subgroup_outer(
+    uint batch_id,
+    uint block_m_id,
+    uint block_p_id,
+    uint local_id,
+    bool a_trans,
+    bool b_trans
+) {
+    const uint lane = gl_SubgroupInvocationID;
+    const uint block_row_base = lane;
+    const uint block_col_base = gl_SubgroupID * subgroup_cols;
+    const uint tiled_n_cnt = args.n / block_n;
+
+    float acc[thread_accum_count];
+    [[unroll]]
+    for(uint i = 0; i < thread_accum_count; i++) {
+        acc[i] = 0.0;
+    }
+
+    for(uint block_n_id = 0; block_n_id < tiled_n_cnt; block_n_id++) {
+        load_tile_a(batch_id, block_m_id, block_n_id, local_id, local_count_32, a_trans);
+        load_tile_b(batch_id, block_p_id, block_n_id, local_id, local_count_32, b_trans);
+        barrier();
+
+        for(uint n_offset = 0; n_offset < block_n; n_offset++) {
+            float a_vals[subgroup_a_register_count];
+            [[unroll]]
+            for(uint row = 0; row < subgroup_rows_per_lane; row++) {
+                a_vals[row] = tile_a[n_offset][block_row_base + row * subgroup_width];
             }
-        } else {
-            for(uint row = 0; row < thread_tile_m; row++) {
-                const uint global_row = global_row_base + row;
 
-                for(uint col = 0; col < thread_tile_p; col++) {
-                    const uint global_col = global_col_base + col;
-                    const uint acc_idx = row * max_thread_tile_p + col;
-                    store_c_scalar(batch_id, global_row, global_col, acc[acc_idx]);
+            float lane_b = 0.0;
+            if(lane < subgroup_cols) {
+                lane_b = tile_b[n_offset][block_col_base + lane];
+            }
+
+            [[unroll]]
+            for(uint col = 0; col < subgroup_cols; col++) {
+                const float b_val = subgroupShuffle(lane_b, col);
+                [[unroll]]
+                for(uint row = 0; row < subgroup_rows_per_lane; row++) {
+                    const uint acc_idx = row * subgroup_cols + col;
+                    acc[acc_idx] = fma(a_vals[row], b_val, acc[acc_idx]);
                 }
             }
         }
-    } else if(args.beta == 0.0) {
-        if(c_trans) {
-            for(uint row = 0; row < thread_tile_m; row++) {
-                const uint global_row = global_row_base + row;
 
-                for(uint col = 0; col < thread_tile_p; col++) {
-                    const uint global_col = global_col_base + col;
-                    const uint acc_idx = row * max_thread_tile_p + col;
-                    store_c_trans_scalar(batch_id, global_row, global_col, args.alpha * acc[acc_idx]);
-                }
-            }
-        } else {
-            for(uint row = 0; row < thread_tile_m; row++) {
-                const uint global_row = global_row_base + row;
-
-                for(uint col = 0; col < thread_tile_p; col++) {
-                    const uint global_col = global_col_base + col;
-                    const uint acc_idx = row * max_thread_tile_p + col;
-                    store_c_scalar(batch_id, global_row, global_col, args.alpha * acc[acc_idx]);
-                }
-            }
+        if(block_n_id + 1 < tiled_n_cnt) {
+            barrier();
         }
-    } else if(c_trans) {
-        for(uint row = 0; row < thread_tile_m; row++) {
-            const uint global_row = global_row_base + row;
+    }
 
+    const uint global_row_base = block_m_id * block_m + block_row_base;
+    const uint global_col_base = block_p_id * block_p + block_col_base;
+    [[unroll]]
+    for(uint col = 0; col < subgroup_cols; col++) {
+        const uint global_col = global_col_base + col;
+        [[unroll]]
+        for(uint row = 0; row < subgroup_rows_per_lane; row++) {
+            const uint global_row = global_row_base + row * subgroup_width;
+            const uint acc_idx = row * subgroup_cols + col;
+            update_c(get_c_trans_idx(batch_id, global_row, global_col), acc[acc_idx]);
+        }
+    }
+}
+
+void run_thread_outer(
+    uint batch_id,
+    uint block_m_id,
+    uint block_p_id,
+    uint local_id,
+    bool a_trans,
+    bool b_trans,
+    bool c_trans
+) {
+    const uint local_m = gl_LocalInvocationID.x;
+    const uint local_p = gl_LocalInvocationID.y;
+    const uint block_row_base = local_m * thread_tile_m;
+    const uint block_col_base = local_p * thread_tile_p;
+    const uint tiled_n_cnt = args.n / block_n;
+
+    float acc[thread_accum_count];
+    [[unroll]]
+    for(uint i = 0; i < thread_accum_count; i++) {
+        acc[i] = 0.0;
+    }
+
+    for(uint block_n_id = 0; block_n_id < tiled_n_cnt; block_n_id++) {
+        load_tile_a(batch_id, block_m_id, block_n_id, local_id, local_count_32, a_trans);
+        load_tile_b(batch_id, block_p_id, block_n_id, local_id, local_count_32, b_trans);
+        barrier();
+
+        for(uint n_offset = 0; n_offset < block_n; n_offset++) {
+            float b_vals[thread_tile_p];
+            [[unroll]]
             for(uint col = 0; col < thread_tile_p; col++) {
-                const uint global_col = global_col_base + col;
-                const uint acc_idx = row * max_thread_tile_p + col;
-                const float c_old = load_c_trans_scalar(batch_id, global_row, global_col);
-                store_c_trans_scalar(batch_id, global_row, global_col, fma(args.alpha, acc[acc_idx], args.beta * c_old));
+                b_vals[col] = tile_b[n_offset][block_col_base + col];
+            }
+
+            [[unroll]]
+            for(uint row = 0; row < thread_tile_m; row++) {
+                const float a_val = tile_a[n_offset][block_row_base + row];
+                [[unroll]]
+                for(uint col = 0; col < thread_tile_p; col++) {
+                    const uint acc_idx = row * thread_tile_p + col;
+                    acc[acc_idx] = fma(a_val, b_vals[col], acc[acc_idx]);
+                }
             }
         }
+
+        if(block_n_id + 1 < tiled_n_cnt) {
+            barrier();
+        }
+    }
+
+    const uint global_row_base = block_m_id * block_m + block_row_base;
+    const uint global_col_base = block_p_id * block_p + block_col_base;
+    [[unroll]]
+    for(uint row = 0; row < thread_tile_m; row++) {
+        const uint global_row = global_row_base + row;
+        [[unroll]]
+        for(uint col = 0; col < thread_tile_p; col++) {
+            const uint global_col = global_col_base + col;
+            const uint acc_idx = row * thread_tile_p + col;
+            const uint c_idx = c_trans
+                ? get_c_trans_idx(batch_id, global_row, global_col)
+                : get_c_idx(batch_id, global_row, global_col);
+            update_c(c_idx, acc[acc_idx]);
+        }
+    }
+}
+
+void main() {
+    const uint batch_id = gl_WorkGroupID.x;
+    const uint block_m_id = gl_WorkGroupID.y;
+    const uint block_p_id = gl_WorkGroupID.z;
+    const uint local_id = gl_LocalInvocationIndex;
+    const bool a_trans = (args.flags & flag_a_trans) != 0;
+    const bool b_trans = (args.flags & flag_b_trans) != 0;
+    const bool c_trans = (args.flags & flag_c_trans) != 0;
+
+    if(!c_trans && can_use_row_subgroup_outer()) {
+        run_row_subgroup_outer(
+            batch_id,
+            block_m_id,
+            block_p_id,
+            local_id,
+            a_trans,
+            b_trans
+        );
+    } else if(c_trans && can_use_col_subgroup_outer()) {
+        run_col_subgroup_outer(
+            batch_id,
+            block_m_id,
+            block_p_id,
+            local_id,
+            a_trans,
+            b_trans
+        );
     } else {
-        for(uint row = 0; row < thread_tile_m; row++) {
-            const uint global_row = global_row_base + row;
-
-            for(uint col = 0; col < thread_tile_p; col++) {
-                const uint global_col = global_col_base + col;
-                const uint acc_idx = row * max_thread_tile_p + col;
-                const float c_old = load_c_scalar(batch_id, global_row, global_col);
-                store_c_scalar(batch_id, global_row, global_col, fma(args.alpha, acc[acc_idx], args.beta * c_old));
-            }
-        }
+        run_thread_outer(
+            batch_id,
+            block_m_id,
+            block_p_id,
+            local_id,
+            a_trans,
+            b_trans,
+            c_trans
+        );
     }
 }

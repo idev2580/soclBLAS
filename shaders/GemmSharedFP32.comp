@@ -1,4 +1,5 @@
 #version 460
+#extension GL_EXT_control_flow_attributes: enable
 
 // Shared-memory FP32 GEMM with configurable per-invocation register blocking.
 //
@@ -44,11 +45,11 @@ layout(push_constant) uniform constants {
     uint c_p_stride;
 } args;
 
-const uint max_thread_tile_m = 8;
-const uint max_thread_tile_p = 8;
-const uint max_thread_accum = max_thread_tile_m * max_thread_tile_p;
+const uint thread_accum_count = thread_tile_m * thread_tile_p;
+const bool can_swizzle_tile_a = (block_m & (block_m - 1)) == 0;
+const uint tile_a_swizzle_mask = block_m < 32 ? block_m - 1 : 31;
 
-shared float tile_a[block_m][block_n];
+shared float tile_a[block_n][block_m];
 shared float tile_b[block_n][block_p];
 
 uint get_a_idx(uint batch_id, uint r, uint col) {
@@ -63,6 +64,21 @@ uint get_c_idx(uint batch_id, uint r, uint col) {
     return batch_id * args.c_stride + r * args.c_m_stride + col * args.c_p_stride;
 }
 
+uint get_tile_a_row(uint row, uint n_offset) {
+    // XOR only changes the shared-memory bank; global A loads remain contiguous.
+    return can_swizzle_tile_a
+        ? row ^ (n_offset & tile_a_swizzle_mask)
+        : row;
+}
+
+void update_c(uint c_idx, float value) {
+    if(args.beta == 0.0) {
+        c[c_idx] = args.alpha == 1.0 ? value : args.alpha * value;
+    } else {
+        c[c_idx] = fma(args.alpha, value, args.beta * c[c_idx]);
+    }
+}
+
 void main() {
     const uint batch_id = gl_WorkGroupID.x;
     const uint block_m_id = gl_WorkGroupID.y;
@@ -73,14 +89,13 @@ void main() {
     const uint local_id = local_p * local_m_cnt + local_m;
     const uint local_count = local_m_cnt * local_p_cnt;
 
-    const uint block_row_base = local_m * thread_tile_m;
     const uint block_col_base = local_p * thread_tile_p;
-    const uint global_row_base = block_m_id * block_m + block_row_base;
     const uint global_col_base = block_p_id * block_p + block_col_base;
     const uint tiled_n_cnt = (args.n / block_n) + (args.n % block_n == 0 ? 0 : 1);
 
-    float acc[max_thread_accum];
-    for(uint i = 0; i < max_thread_accum; i++) {
+    float acc[thread_accum_count];
+    [[unroll]]
+    for(uint i = 0; i < thread_accum_count; i++) {
         acc[i] = 0.0;
     }
 
@@ -91,7 +106,7 @@ void main() {
             const uint a_r = block_m_id * block_m + load_m;
             const uint a_c = block_n_id * block_n + load_n;
 
-            tile_a[load_m][load_n] =
+            tile_a[load_n][get_tile_a_row(load_m, load_n)] =
                 (a_r < args.m && a_c < args.n) ? a[get_a_idx(batch_id, a_r, a_c)] : 0.0;
         }
 
@@ -108,39 +123,49 @@ void main() {
         barrier();
 
         for(uint n_offset = 0; n_offset < block_n; n_offset++) {
-            float b_vals[max_thread_tile_p];
+            float b_vals[thread_tile_p];
 
+            [[unroll]]
             for(uint c_col = 0; c_col < thread_tile_p; c_col++) {
                 b_vals[c_col] = tile_b[n_offset][block_col_base + c_col];
             }
 
+            // Every K step forms a scalar register-tile outer product.
+            [[unroll]]
             for(uint r = 0; r < thread_tile_m; r++) {
-                const float a_val = tile_a[block_row_base + r][n_offset];
+                const uint block_row = local_m + r * local_m_cnt;
+                const float a_val = tile_a[n_offset][get_tile_a_row(block_row, n_offset)];
+                [[unroll]]
                 for(uint c_col = 0; c_col < thread_tile_p; c_col++) {
-                    const uint acc_idx = r * max_thread_tile_p + c_col;
+                    const uint acc_idx = r * thread_tile_p + c_col;
                     acc[acc_idx] = fma(a_val, b_vals[c_col], acc[acc_idx]);
                 }
             }
         }
 
-        barrier();
+        if(block_n_id + 1 < tiled_n_cnt) {
+            barrier();
+        }
     }
 
+    [[unroll]]
     for(uint r = 0; r < thread_tile_m; r++) {
-        const uint global_r = global_row_base + r;
+        const uint block_row = local_m + r * local_m_cnt;
+        const uint global_r = block_m_id * block_m + block_row;
         if(global_r >= args.m) {
             continue;
         }
 
+        [[unroll]]
         for(uint c_col = 0; c_col < thread_tile_p; c_col++) {
             const uint global_c = global_col_base + c_col;
             if(global_c >= args.p) {
                 continue;
             }
 
-            const uint acc_idx = r * max_thread_tile_p + c_col;
+            const uint acc_idx = r * thread_tile_p + c_col;
             const uint c_idx = get_c_idx(batch_id, global_r, global_c);
-            c[c_idx] = fma(args.alpha, acc[acc_idx], args.beta * c[c_idx]);
+            update_c(c_idx, acc[acc_idx]);
         }
     }
 }

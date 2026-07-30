@@ -14,22 +14,23 @@
 #include <soclblas/ops/GemmShared.hpp>
 
 namespace {
+    constexpr int gpu_idx = 1;
     enum class GemmPerfMode {
         Shared,
         Contiguous
     };
 
     struct GemmPerfConfig {
-        uint32_t batch = 4096;
-        uint32_t m = 256;
-        uint32_t n = 256;
-        uint32_t p = 256;
-        uint32_t tile_m = 64;
-        uint32_t tile_n = 16;
-        uint32_t tile_p = 64;
-        uint32_t thread_tile_m = 4;
-        uint32_t thread_tile_p = 4;
-        uint32_t iterations = 32;
+        uint32_t batch = 64;
+        uint32_t m = 4096;
+        uint32_t n = 1024;
+        uint32_t p = 1024;
+        uint32_t tile_m = 128;
+        uint32_t tile_n = 32;
+        uint32_t tile_p = 128;
+        uint32_t thread_tile_m = 8;
+        uint32_t thread_tile_p = 8;
+        uint32_t iterations = 50;
         uint32_t seed = 2580;
     };
 
@@ -240,7 +241,7 @@ namespace {
         std::vector<float> b(static_cast<size_t>(b_elements));
         std::vector<float> c(static_cast<size_t>(c_elements), 0.0f);
 
-        socl::Context ctx({0});
+        socl::Context ctx({gpu_idx});
         ctx.printGpuInfo(std::cout);
         soclblas::GemmSharedFP32 gemm(
             ctx,
@@ -311,7 +312,7 @@ namespace {
         std::vector<float> b(static_cast<size_t>(b_elements));
         std::vector<float> c(static_cast<size_t>(c_elements), 0.0f);
 
-        socl::Context ctx({0});
+        socl::Context ctx({gpu_idx});
         ctx.printGpuInfo(std::cout);
         soclblas::GemmContiguousNaiveFP32 gemm(
             ctx,
