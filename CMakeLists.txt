@@ -64,3 +64,15 @@ if(PERFORMANCE_TEST_SOURCES)
     target_link_libraries(soclblas_performance_tests PRIVATE soclblas)
     copy_target_runtime_dlls(soclblas_performance_tests)
 endif()
+
+if(PERFORMANCE_SWEEP_TEST_SOURCES)
+    add_executable(
+        soclblas_performance_sweep_tests
+        ${PERFORMANCE_SWEEP_TEST_SOURCES}
+    )
+    target_link_libraries(
+        soclblas_performance_sweep_tests
+        PRIVATE soclblas
+    )
+    copy_target_runtime_dlls(soclblas_performance_sweep_tests)
+endif()
