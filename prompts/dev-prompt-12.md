@@ -57,3 +57,22 @@ line:
 - Follow the existing `PerformanceTest` option parsing, reporting, and benchmark
   conventions. Keep the two new options independently selectable and preserve
   existing benchmark modes.
+
+Split the subgroup/shared-memory kernels into two named strategies:
+
+- Rename the current A/B register-fragment implementation and its C++ wrappers
+  from `Naive` to `GreedyRegister` for MatMul, in-place GEMM, and out-of-place
+  GEMM. Preserve its behavior and `reg_tile_n` preloading strategy.
+- Recreate the `Naive` shader/C++ names with a lower-register-pressure streaming
+  implementation:
+  - keep only the persistent C accumulator tile plus the current A/B values;
+  - for each shared-N position, let designated subgroup lanes load the needed
+    shared values;
+  - immediately distribute them with subgroup shuffles and perform the FMA;
+  - do not retain A/B fragments across multiple N positions.
+- Keep specialization ID 9 and the shared-N depth formula compatible across
+  both strategies. Interpret it as `reg_tile_n` for GreedyRegister and
+  `k_unroll` for Naive.
+- Add both strategies to shader/source CMake lists and expose GreedyRegister
+  benchmark modes alongside the existing `--naive` and `--naive-oop` streaming
+  modes.

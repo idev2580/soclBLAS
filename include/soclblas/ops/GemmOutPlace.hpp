@@ -28,7 +28,7 @@ namespace soclblas{
             uint32_t subgroup_tile_cnt_p = 2,
             uint32_t shared_tile_n_multiplier = 2,
             uint32_t reg_tile_m = 8,
-            uint32_t reg_tile_n = 8,
+            uint32_t inner_tile_n = 8,
             uint32_t reg_tile_p = 8
         );
         virtual socl::DispatchToken execute(

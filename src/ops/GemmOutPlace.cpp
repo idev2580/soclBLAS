@@ -12,12 +12,12 @@ namespace soclblas{
         uint32_t subgroup_tile_cnt_p,
         uint32_t shared_tile_n_multiplier,
         uint32_t reg_tile_m,
-        uint32_t reg_tile_n,
+        uint32_t inner_tile_n,
         uint32_t reg_tile_p
     ):
         ctx(ctx),
         tile_m(subgroup_tile_cnt_m * subgroup_tile_m * reg_tile_m),
-        tile_n(shared_tile_n_multiplier * subgroup_tile_n * reg_tile_n),
+        tile_n(shared_tile_n_multiplier * subgroup_tile_n * inner_tile_n),
         tile_p(subgroup_tile_cnt_p * subgroup_tile_p * reg_tile_p){
         const uint32_t threadgroup_tile_m =
             subgroup_tile_cnt_m * subgroup_tile_m;
@@ -43,7 +43,7 @@ namespace soclblas{
                 {6, socl::specConstant(threadgroup_tile_m)},
                 {7, socl::specConstant(threadgroup_tile_p)},
                 {8, socl::specConstant(reg_tile_m)},
-                {9, socl::specConstant(reg_tile_n)},
+                {9, socl::specConstant(inner_tile_n)},
                 {10, socl::specConstant(reg_tile_p)}
             }
         });

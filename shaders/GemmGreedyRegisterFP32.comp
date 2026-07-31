@@ -6,7 +6,7 @@
 #extension GL_KHR_shader_subgroup_arithmetic: enable
 
 /*
- * Execution and tiling hierarchy
+ * Greedy-register execution and tiling hierarchy
  * =================================
  *
  * Dispatch
@@ -88,11 +88,11 @@
 layout(constant_id = 0) const uint shared_tile_n_multiplier = 2;
 layout(constant_id = 1) const uint subgroup_tile_cnt_m = 2;
 layout(constant_id = 2) const uint subgroup_tile_cnt_p = 2;
-layout(constant_id = 3) const uint subgroup_tile_m = 4;
-layout(constant_id = 4) const uint subgroup_tile_n = 8;
-layout(constant_id = 5) const uint subgroup_tile_p = 8;
-layout(constant_id = 6) const uint threadgroup_tile_m = 8; // subgroup_tile_cnt_m * subgroup_tile_m
-layout(constant_id = 7) const uint threadgroup_tile_p = 16;// subgroup_tile_cnt_p * subgroup_tile_p
+layout(constant_id = 3) const uint subgroup_tile_m = 8;
+layout(constant_id = 4) const uint subgroup_tile_n = 4;
+layout(constant_id = 5) const uint subgroup_tile_p = 4;
+layout(constant_id = 6) const uint threadgroup_tile_m = 16; // subgroup_tile_cnt_m * subgroup_tile_m
+layout(constant_id = 7) const uint threadgroup_tile_p = 8;  // subgroup_tile_cnt_p * subgroup_tile_p
 layout(constant_id = 8) const uint reg_tile_m = 8;
 layout(constant_id = 9) const uint reg_tile_n = 8;
 layout(constant_id = 10) const uint reg_tile_p = 8;
@@ -101,7 +101,7 @@ const uint shared_tile_p_multiplier = subgroup_tile_cnt_p;
 
 layout(local_size_x_id = 6, local_size_y_id = 7, local_size_z = 1) in;
 
-// c := A * B
+// c := alpha * A * B + beta * C
 layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
     float a[];
 };
@@ -110,7 +110,7 @@ layout(set = 0, binding = 1) readonly restrict buffer tensor_b {
     float b[];
 };
 
-layout(set = 0, binding = 2) writeonly restrict buffer tensor_c {
+layout(set = 0, binding = 2) restrict buffer tensor_c {
     float c[];
 };
 layout( push_constant ) uniform constants {
@@ -118,6 +118,8 @@ layout( push_constant ) uniform constants {
     uint m;
     uint n;
     uint p;
+    float alpha;
+    float beta;
     uint a_stride;
     uint b_stride;
     uint c_stride;
@@ -468,8 +470,11 @@ void write_accumulator(
         for(uint rti_p = 0; rti_p < reg_tile_p; rti_p++){
             const uint global_p = global_p_offset + rti_p;
             if(global_p < args.p){
-                c[get_c_idx(batch_id, global_m, global_p)] =
-                    acc[rti_m][rti_p];
+                const uint c_idx = get_c_idx(batch_id, global_m, global_p);
+                c[c_idx] = fma(
+                    args.alpha,
+                    acc[rti_m][rti_p],
+                    args.beta * c[c_idx]);
             }
         }
     }

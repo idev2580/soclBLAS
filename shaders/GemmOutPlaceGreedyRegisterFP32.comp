@@ -6,7 +6,7 @@
 #extension GL_KHR_shader_subgroup_arithmetic: enable
 
 /*
- * Streaming execution and tiling hierarchy
+ * Greedy-register execution and tiling hierarchy
  * =================================
  *
  * Dispatch
@@ -54,20 +54,21 @@
  *         + lane_p * reg_tile_p
  *
  * N-axis pipeline
- *   streamed K unroll = k_unroll
+ *   register N tile = reg_tile_n
  *   shared N tile =
- *       shared_tile_n_multiplier * subgroup_tile_n * k_unroll
+ *       shared_tile_n_multiplier * subgroup_tile_n * reg_tile_n
  *
  *   1. The workgroup loads one large A/B shared tile.
  *   2. barrier() makes the tile visible to every subgroup.
- *   3. For each K, every subgroup reads only the current A/B values, exchanges
- *      them with subgroupShuffle(), and immediately updates its C register tile.
+ *   3. Each subgroup independently loads register fragments, exchanges them
+ *      with subgroupShuffle(), and accumulates its own C register tile.
  *   4. barrier() prevents the next iteration from overwriting shared memory
  *      while another subgroup is still reading it.
  *
  * Specialization invariants
  *   subgroup_tile_m * subgroup_tile_p == gl_SubgroupSize == 32
- *   k_unroll > 0
+ *   reg_tile_n % subgroup_tile_m == 0
+ *   reg_tile_n % subgroup_tile_p == 0
  *   threadgroup_tile_m * threadgroup_tile_p
  *       == subgroup_tile_cnt_m * subgroup_tile_cnt_p * gl_SubgroupSize
  */
@@ -82,6 +83,9 @@
 #define B_P_STRIDE args.b_p_stride
 #define C_M_STRIDE args.c_m_stride
 #define C_P_STRIDE args.c_p_stride
+#define OUT_C_STRIDE args.out_c_stride
+#define OUT_C_M_STRIDE args.out_c_m_stride
+#define OUT_C_P_STRIDE args.out_c_p_stride
 
 // Specialized Constants
 layout(constant_id = 0) const uint shared_tile_n_multiplier = 2;
@@ -93,14 +97,14 @@ layout(constant_id = 5) const uint subgroup_tile_p = 4;
 layout(constant_id = 6) const uint threadgroup_tile_m = 16; // subgroup_tile_cnt_m * subgroup_tile_m
 layout(constant_id = 7) const uint threadgroup_tile_p = 8;  // subgroup_tile_cnt_p * subgroup_tile_p
 layout(constant_id = 8) const uint reg_tile_m = 8;
-layout(constant_id = 9) const uint k_unroll = 8;
+layout(constant_id = 9) const uint reg_tile_n = 8;
 layout(constant_id = 10) const uint reg_tile_p = 8;
 const uint shared_tile_m_multiplier = subgroup_tile_cnt_m;
 const uint shared_tile_p_multiplier = subgroup_tile_cnt_p;
 
 layout(local_size_x_id = 6, local_size_y_id = 7, local_size_z = 1) in;
 
-// c := alpha * A * B + beta * C
+// d := alpha * A * B + beta * C
 layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
     float a[];
 };
@@ -109,9 +113,14 @@ layout(set = 0, binding = 1) readonly restrict buffer tensor_b {
     float b[];
 };
 
-layout(set = 0, binding = 2) restrict buffer tensor_c {
+layout(set = 0, binding = 2) readonly restrict buffer tensor_c {
     float c[];
 };
+
+layout(set = 0, binding = 3) writeonly restrict buffer tensor_d {
+    float d[];
+};
+
 layout( push_constant ) uniform constants {
     uint batch;
     uint m;
@@ -128,13 +137,18 @@ layout( push_constant ) uniform constants {
     uint b_p_stride;
     uint c_m_stride;
     uint c_p_stride;
+    uint out_c_stride;
+    uint out_c_m_stride;
+    uint out_c_p_stride;
 } args;
 
 const uint shared_as_row_size = shared_tile_m_multiplier * subgroup_tile_m * reg_tile_m;
-const uint shared_as_col_size = shared_tile_n_multiplier * subgroup_tile_n * k_unroll;
-const uint shared_bs_row_size = shared_tile_n_multiplier * subgroup_tile_n * k_unroll;
+const uint shared_as_col_size = shared_tile_n_multiplier * subgroup_tile_n * reg_tile_n;
+const uint shared_bs_row_size = shared_tile_n_multiplier * subgroup_tile_n * reg_tile_n;
 const uint shared_bs_col_size = shared_tile_p_multiplier * subgroup_tile_p * reg_tile_p;
 const uint subgroup_lane_count = subgroup_tile_m * subgroup_tile_p;
+const uint subgroup_a_reg_n_count = reg_tile_n / subgroup_tile_p;
+const uint subgroup_b_reg_n_count = reg_tile_n / subgroup_tile_m;
 
 // This shader follows row-major, so col-major is transposed one.
 shared float ATs[shared_as_col_size][shared_as_row_size];
@@ -159,6 +173,13 @@ uint get_b_idx(uint batch_id, uint n, uint p){
 
 uint get_c_idx(uint batch_id, uint m, uint p){
     return batch_id * C_STRIDE + m * C_M_STRIDE + p * C_P_STRIDE;
+}
+
+uint get_out_c_idx(uint batch_id, uint m, uint p){
+    return
+        batch_id * OUT_C_STRIDE +
+        m * OUT_C_M_STRIDE +
+        p * OUT_C_P_STRIDE;
 }
 
 uint get_workgroup_invocation_count(){
@@ -322,72 +343,110 @@ void initialize_accumulator(
     }
 }
 
-void stream_a_values(
-    uint shared_n,
-    out float a_values[reg_tile_m]){
-    const uint source_lane_p = shared_n % subgroup_tile_p;
-    const uint source_lane =
-        get_lane_m() + source_lane_p * subgroup_tile_m;
+void load_a_register_fragment(
+    uint shared_n_offset,
+    out float a_fragment[subgroup_a_reg_n_count][reg_tile_m]){
     const uint shared_m_offset = get_lane_tile_m_offset();
-    const bool is_source_lane = get_lane_p() == source_lane_p;
+    const uint lane_p = get_lane_p();
 
     [[unroll]]
-    for(uint rti_m = 0; rti_m < reg_tile_m; rti_m++){
-        float source_value = 0.0f;
-        if(is_source_lane){
-            source_value = ATs[shared_n][shared_m_offset + rti_m];
+    for(uint rni = 0; rni < subgroup_a_reg_n_count; rni++){
+        const uint shared_n =
+            shared_n_offset + rni * subgroup_tile_p + lane_p;
+
+        [[unroll]]
+        for(uint rti_m = 0; rti_m < reg_tile_m; rti_m++){
+            a_fragment[rni][rti_m] =
+                ATs[shared_n][shared_m_offset + rti_m];
         }
-        a_values[rti_m] = subgroupShuffle(source_value, source_lane);
     }
 }
 
-void stream_b_values(
-    uint shared_n,
+void load_b_register_fragment(
+    uint shared_n_offset,
+    out float b_fragment[subgroup_b_reg_n_count][reg_tile_p]){
+    const uint shared_p_offset = get_lane_tile_p_offset();
+    const uint lane_m = get_lane_m();
+
+    [[unroll]]
+    for(uint rni = 0; rni < subgroup_b_reg_n_count; rni++){
+        const uint shared_n =
+            shared_n_offset + rni * subgroup_tile_m + lane_m;
+
+        [[unroll]]
+        for(uint rti_p = 0; rti_p < reg_tile_p; rti_p++){
+            b_fragment[rni][rti_p] =
+                Bs[shared_n][shared_p_offset + rti_p];
+        }
+    }
+}
+
+void broadcast_a_registers(
+    in float a_fragment[subgroup_a_reg_n_count][reg_tile_m],
+    uint rti_n,
+    out float a_values[reg_tile_m]){
+    const uint fragment_n = rti_n / subgroup_tile_p;
+    const uint source_lane_p = rti_n % subgroup_tile_p;
+    const uint source_lane =
+        get_lane_m() + source_lane_p * subgroup_tile_m;
+
+    [[unroll]]
+    for(uint rti_m = 0; rti_m < reg_tile_m; rti_m++){
+        a_values[rti_m] =
+            subgroupShuffle(a_fragment[fragment_n][rti_m], source_lane);
+    }
+}
+
+void broadcast_b_registers(
+    in float b_fragment[subgroup_b_reg_n_count][reg_tile_p],
+    uint rti_n,
     out float b_values[reg_tile_p]){
-    const uint source_lane_m = shared_n % subgroup_tile_m;
+    const uint fragment_n = rti_n / subgroup_tile_m;
+    const uint source_lane_m = rti_n % subgroup_tile_m;
     const uint source_lane =
         source_lane_m + get_lane_p() * subgroup_tile_m;
-    const uint shared_p_offset = get_lane_tile_p_offset();
-    const bool is_source_lane = get_lane_m() == source_lane_m;
 
     [[unroll]]
     for(uint rti_p = 0; rti_p < reg_tile_p; rti_p++){
-        float source_value = 0.0f;
-        if(is_source_lane){
-            source_value = Bs[shared_n][shared_p_offset + rti_p];
-        }
-        b_values[rti_p] = subgroupShuffle(source_value, source_lane);
+        b_values[rti_p] =
+            subgroupShuffle(b_fragment[fragment_n][rti_p], source_lane);
     }
 }
 
-void accumulate_streamed_k(
-    uint shared_n,
+void accumulate_register_tile(
+    uint shared_n_offset,
     inout float acc[reg_tile_m][reg_tile_p]){
-    float a_values[reg_tile_m];
-    float b_values[reg_tile_p];
+    float a_fragment[subgroup_a_reg_n_count][reg_tile_m];
+    float b_fragment[subgroup_b_reg_n_count][reg_tile_p];
 
-    stream_a_values(shared_n, a_values);
-    stream_b_values(shared_n, b_values);
+    load_a_register_fragment(shared_n_offset, a_fragment);
+    load_b_register_fragment(shared_n_offset, b_fragment);
 
     [[unroll]]
-    for(uint rti_m = 0; rti_m < reg_tile_m; rti_m++){
+    for(uint rti_n = 0; rti_n < reg_tile_n; rti_n++){
+        float a_values[reg_tile_m];
+        float b_values[reg_tile_p];
+
+        broadcast_a_registers(a_fragment, rti_n, a_values);
+        broadcast_b_registers(b_fragment, rti_n, b_values);
+
         [[unroll]]
-        for(uint rti_p = 0; rti_p < reg_tile_p; rti_p++){
-            acc[rti_m][rti_p] =
-                fma(a_values[rti_m], b_values[rti_p], acc[rti_m][rti_p]);
+        for(uint rti_m = 0; rti_m < reg_tile_m; rti_m++){
+            [[unroll]]
+            for(uint rti_p = 0; rti_p < reg_tile_p; rti_p++){
+                acc[rti_m][rti_p] =
+                    fma(a_values[rti_m], b_values[rti_p], acc[rti_m][rti_p]);
+            }
         }
     }
 }
 
 void accumulate_shared_tile(
     inout float acc[reg_tile_m][reg_tile_p]){
-    for(uint shared_n_base = 0;
-        shared_n_base < shared_as_col_size;
-        shared_n_base += k_unroll){
-        [[unroll]]
-        for(uint ki = 0; ki < k_unroll; ki++){
-            accumulate_streamed_k(shared_n_base + ki, acc);
-        }
+    for(uint shared_n_offset = 0;
+        shared_n_offset < shared_as_col_size;
+        shared_n_offset += reg_tile_n){
+        accumulate_register_tile(shared_n_offset, acc);
     }
 }
 
@@ -430,7 +489,9 @@ void write_accumulator(
             const uint global_p = global_p_offset + rti_p;
             if(global_p < args.p){
                 const uint c_idx = get_c_idx(batch_id, global_m, global_p);
-                c[c_idx] = fma(
+                const uint out_c_idx =
+                    get_out_c_idx(batch_id, global_m, global_p);
+                d[out_c_idx] = fma(
                     args.alpha,
                     acc[rti_m][rti_p],
                     args.beta * c[c_idx]);
@@ -443,7 +504,8 @@ void write_accumulator(
 void main(){
     // Specialization requirements:
     // 1. subgroup_tile_m * subgroup_tile_p == gl_SubgroupSize == 32.
-    // 2. The workgroup contains subgroup_tile_cnt_m * subgroup_tile_cnt_p
+    // 2. reg_tile_n is divisible by subgroup_tile_m and subgroup_tile_p.
+    // 3. The workgroup contains subgroup_tile_cnt_m * subgroup_tile_cnt_p
     //    full subgroups.
     float acc[reg_tile_m][reg_tile_p];
 

@@ -2,12 +2,12 @@
 #include "socl/Buffer.hpp"
 #include "socl/Context.hpp"
 #include <soclblas/ops/MatMul.hpp>
-#include <MatMulNaiveFP32_SPIRV>
+#include <MatMulGreedyRegisterFP32_SPIRV>
 
 namespace soclblas{
-    class MatMulNaiveFP32: public MatMul{
+    class MatMulGreedyRegisterFP32: public MatMul{
         public:
-        MatMulNaiveFP32(
+        MatMulGreedyRegisterFP32(
             socl::Context& ctx,
             uint32_t subgroup_tile_m,
             uint32_t subgroup_tile_n,
@@ -16,7 +16,7 @@ namespace soclblas{
             uint32_t subgroup_tile_cnt_p = 2,
             uint32_t shared_tile_n_multiplier = 2,
             uint32_t reg_tile_m = 8,
-            uint32_t k_unroll = 8,
+            uint32_t reg_tile_n = 8,
             uint32_t reg_tile_p = 8
         );
     };
