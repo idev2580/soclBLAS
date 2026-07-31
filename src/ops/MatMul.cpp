@@ -5,10 +5,25 @@ namespace soclblas{
     MatMul::MatMul(
         socl::Context& ctx,
         std::span<const uint32_t> shaderBytecodes,
-        uint32_t tile_m,
-        uint32_t tile_n,
-        uint32_t tile_p
-    ):ctx(ctx), tile_m(tile_m), tile_n(tile_n), tile_p(tile_p){
+        uint32_t subgroup_tile_m,
+        uint32_t subgroup_tile_n,
+        uint32_t subgroup_tile_p,
+        uint32_t subgroup_tile_cnt_m,
+        uint32_t subgroup_tile_cnt_p,
+        uint32_t shared_tile_n_multiplier,
+        uint32_t reg_tile_m,
+        uint32_t reg_tile_n,
+        uint32_t reg_tile_p
+    ):
+        ctx(ctx),
+        tile_m(subgroup_tile_cnt_m * subgroup_tile_m * reg_tile_m),
+        tile_n(shared_tile_n_multiplier * subgroup_tile_n * reg_tile_n),
+        tile_p(subgroup_tile_cnt_p * subgroup_tile_p * reg_tile_p){
+        const uint32_t threadgroup_tile_m =
+            subgroup_tile_cnt_m * subgroup_tile_m;
+        const uint32_t threadgroup_tile_p =
+            subgroup_tile_cnt_p * subgroup_tile_p;
+
         this->pipeline = ctx.createShaderPipeline({
             .spirv = shaderBytecodes,
             .bindings = {
@@ -18,9 +33,17 @@ namespace soclblas{
             },
             .pushConstantSize = sizeof(MatMulArguments),
             .specConstants = {
-                {0, socl::specConstant(std::uint32_t{tile_m})},
-                {1, socl::specConstant(std::uint32_t{tile_n})},
-                {2, socl::specConstant(std::uint32_t{tile_p})}
+                {0, socl::specConstant(shared_tile_n_multiplier)},
+                {1, socl::specConstant(subgroup_tile_cnt_m)},
+                {2, socl::specConstant(subgroup_tile_cnt_p)},
+                {3, socl::specConstant(subgroup_tile_m)},
+                {4, socl::specConstant(subgroup_tile_n)},
+                {5, socl::specConstant(subgroup_tile_p)},
+                {6, socl::specConstant(threadgroup_tile_m)},
+                {7, socl::specConstant(threadgroup_tile_p)},
+                {8, socl::specConstant(reg_tile_m)},
+                {9, socl::specConstant(reg_tile_n)},
+                {10, socl::specConstant(reg_tile_p)}
             }
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
