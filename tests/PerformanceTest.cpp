@@ -19,7 +19,20 @@
 /* Argument sweep targets
  *
  * build/socl_performance_test --cont batch M N P tile_m tile_n tile_p thread_tile_m thread_tile_p iterations
- * Current best (GreedyRegister case): ./build/soclblas_performance_tests --greedy-register 4 4096 4096 4096 4 4 8 2 4 1 8 8 8 20 (5 TFLOPs on Radeon 760M, same as theoretical performance)
+ * Current best (Naive, iGPU case): ./build/soclblas_performance_tests --naive 4 4096 4096 4096 4 4 8 2 4 1 8 8 8 20
+
+ * Current best (Naive, dGPU case): ./build/soclblas_performance_tests --naive 4 4096 4096 4096 8 4 4 2 4 1 8 4 8 20
+  C tile       = 128×128
+  shared N     = 16
+  shared memory= 16 KiB
+  threads      = 256
+  acc/thread   = 64
+
+  2MP / (4(M + P))
+  = MP / (2(M + P))
+  = 128×128 / (2×256)
+  = 32 FLOP/byte
+ * Current best (GreedyRegister, iGPU(RDNA3) case): ./build/soclblas_performance_tests --greedy-register 4 4096 4096 4096 4 4 8 2 4 1 8 8 8 20 (5 TFLOPs on Radeon 760M, same as theoretical performance)
  * Current best (Shared Memory 32KiB limit) : 
  * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 16 256 8 8 2
  * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 16 256 16 4 20
