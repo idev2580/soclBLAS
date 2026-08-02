@@ -8,8 +8,9 @@
 namespace soclblas{
     MaxNaiveFP32::MaxNaiveFP32(
         socl::Context& ctx,
-        uint32_t thread_num
-    ):ctx(ctx), thread_num(thread_num){
+        uint32_t thread_num,
+        uint32_t values_per_thread
+    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = MaxNaiveFP32_SPIRV,
             .bindings = {
@@ -20,6 +21,7 @@ namespace soclblas{
             .pushConstantSize = sizeof(IndexedUnaryReductionArguments),
             .specConstants = {
                 {0, socl::specConstant(std::uint32_t{thread_num})},
+                {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
@@ -68,8 +70,9 @@ namespace soclblas{
 
     MinNaiveFP32::MinNaiveFP32(
         socl::Context& ctx,
-        uint32_t thread_num
-    ):ctx(ctx), thread_num(thread_num){
+        uint32_t thread_num,
+        uint32_t values_per_thread
+    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = MinNaiveFP32_SPIRV,
             .bindings = {
@@ -80,6 +83,7 @@ namespace soclblas{
             .pushConstantSize = sizeof(IndexedUnaryReductionArguments),
             .specConstants = {
                 {0, socl::specConstant(std::uint32_t{thread_num})},
+                {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
@@ -128,8 +132,9 @@ namespace soclblas{
 
     AvgNaiveFP32::AvgNaiveFP32(
         socl::Context& ctx,
-        uint32_t thread_num
-    ):ctx(ctx), thread_num(thread_num){
+        uint32_t thread_num,
+        uint32_t values_per_thread
+    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = AvgNaiveFP32_SPIRV,
             .bindings = {
@@ -139,6 +144,7 @@ namespace soclblas{
             .pushConstantSize = sizeof(UnaryReductionArguments),
             .specConstants = {
                 {0, socl::specConstant(std::uint32_t{thread_num})},
+                {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
@@ -179,8 +185,9 @@ namespace soclblas{
 
     SumNaiveFP32::SumNaiveFP32(
         socl::Context& ctx,
-        uint32_t thread_num
-    ):ctx(ctx), thread_num(thread_num){
+        uint32_t thread_num,
+        uint32_t values_per_thread
+    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = SumNaiveFP32_SPIRV,
             .bindings = {
@@ -190,6 +197,7 @@ namespace soclblas{
             .pushConstantSize = sizeof(UnaryReductionArguments),
             .specConstants = {
                 {0, socl::specConstant(std::uint32_t{thread_num})},
+                {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
         this->descSet = ctx.createDescriptorSet(pipeline);
