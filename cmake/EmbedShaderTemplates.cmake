@@ -1,0 +1,21 @@
+file(READ "${GEMM_TEMPLATE}" GEMM_TEMPLATE_HEX HEX)
+file(READ "${MATMUL_TEMPLATE}" MATMUL_TEMPLATE_HEX HEX)
+file(READ "${GEMM_OUT_PLACE_TEMPLATE}" GEMM_OUT_PLACE_TEMPLATE_HEX HEX)
+
+function(format_byte_array hex_value output_variable)
+    string(REGEX MATCHALL ".." bytes "${hex_value}")
+    list(JOIN bytes ", 0x" formatted_bytes)
+    set(${output_variable} "0x${formatted_bytes}" PARENT_SCOPE)
+endfunction()
+
+format_byte_array("${GEMM_TEMPLATE_HEX}" GEMM_TEMPLATE_BYTES)
+format_byte_array("${MATMUL_TEMPLATE_HEX}" MATMUL_TEMPLATE_BYTES)
+format_byte_array("${GEMM_OUT_PLACE_TEMPLATE_HEX}" GEMM_OUT_PLACE_TEMPLATE_BYTES)
+
+file(WRITE "${OUTPUT_FILE}" "#include <cstddef>\n#include <string_view>\n\nnamespace soclblas::detail{\n")
+file(APPEND "${OUTPUT_FILE}" "namespace{\nconst unsigned char gemm_naive_template[] = {${GEMM_TEMPLATE_BYTES}};\n")
+file(APPEND "${OUTPUT_FILE}" "const unsigned char matmul_naive_template[] = {${MATMUL_TEMPLATE_BYTES}};\n")
+file(APPEND "${OUTPUT_FILE}" "const unsigned char gemm_out_place_naive_template[] = {${GEMM_OUT_PLACE_TEMPLATE_BYTES}};\n}\n")
+file(APPEND "${OUTPUT_FILE}" "std::string_view gemmNaiveShaderTemplate(){ return {reinterpret_cast<const char*>(gemm_naive_template), sizeof(gemm_naive_template)}; }\n")
+file(APPEND "${OUTPUT_FILE}" "std::string_view matmulNaiveShaderTemplate(){ return {reinterpret_cast<const char*>(matmul_naive_template), sizeof(matmul_naive_template)}; }\n")
+file(APPEND "${OUTPUT_FILE}" "std::string_view gemmOutPlaceNaiveShaderTemplate(){ return {reinterpret_cast<const char*>(gemm_out_place_naive_template), sizeof(gemm_out_place_naive_template)}; }\n}\n")

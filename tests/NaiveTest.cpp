@@ -6,10 +6,15 @@
 #include <soclblas/ops/AxpyOutPlace.hpp>
 #include <soclblas/ops/DotProductNaive.hpp>
 #include <soclblas/ops/GemmNaive.hpp>
+#include <soclblas/ops/GemmNaiveTemplate.hpp>
 #include <soclblas/ops/GemmOutPlaceNaive.hpp>
+#include <soclblas/ops/GemmOutPlaceNaiveTemplate.hpp>
 #include <soclblas/ops/GemvNaive.hpp>
+#include <soclblas/ops/GemvNaiveTemplate.hpp>
 #include <soclblas/ops/GemvOutPlaceNaive.hpp>
+#include <soclblas/ops/GemvOutPlaceNaiveTemplate.hpp>
 #include <soclblas/ops/MatMulNaive.hpp>
+#include <soclblas/ops/MatMulNaiveTemplate.hpp>
 #include <soclblas/ops/ReductionNaive.hpp>
 #include "lib/MinCpuBlas.hpp"
 
@@ -1026,4 +1031,95 @@ TEST(ReductionNaiveTest, ComputesMaxAndMinValuesAndIndices){
 
 TEST(MatMulNaiveTest, BasicAssertion){
     run_matmul_test<soclblas::MatMulNaiveFP32>("MatMulNaiveFP32");
+}
+
+TEST(NaiveTemplateTest, AppliesRuntimeReluEpilogue){
+    constexpr std::string_view relu = R"(
+float epilogue(float value){
+    return max(value, 0.0f);
+}
+)";
+    socl::Context ctx;
+    auto bufferA = ctx.createBuffer(sizeof(float), socl::BufferType::Auto);
+    auto bufferB = ctx.createBuffer(sizeof(float), socl::BufferType::Auto);
+    auto bufferC = ctx.createBuffer(sizeof(float), socl::BufferType::Auto);
+    auto bufferOut = ctx.createBuffer(sizeof(float), socl::BufferType::Auto);
+
+    const float a = -2.0f;
+    const float b = 3.0f;
+    const float initial = 1.0f;
+    float result = initial;
+    bufferA.write(&a, sizeof(a));
+    bufferB.write(&b, sizeof(b));
+
+    const soclblas::GemmArguments gemmArgs = {
+        .b = 1, .m = 1, .n = 1, .p = 1,
+        .alpha = 1.0f, .beta = 0.0f,
+        .a_stride = 1, .b_stride = 1, .c_stride = 1,
+        .a_m_stride = 1, .a_n_stride = 1,
+        .b_n_stride = 1, .b_p_stride = 1,
+        .c_m_stride = 1, .c_p_stride = 1
+    };
+    const soclblas::MatMulArguments matmulArgs = {
+        .b = 1, .m = 1, .n = 1, .p = 1,
+        .a_stride = 1, .b_stride = 1, .c_stride = 1,
+        .a_m_stride = 1, .a_n_stride = 1,
+        .b_n_stride = 1, .b_p_stride = 1,
+        .c_m_stride = 1, .c_p_stride = 1
+    };
+    const soclblas::GemvArguments gemvArgs = {
+        .b = 1, .m = 1, .n = 1,
+        .alpha = 1.0f, .beta = 0.0f,
+        .a_m_stride = 1, .a_n_stride = 1,
+        .x_n_stride = 1, .x_b_stride = 1,
+        .y_m_stride = 1, .y_b_stride = 1
+    };
+
+    soclblas::GemmNaiveTemplateFP32 gemm(
+        ctx, relu, 1, 1, 32, 4, 2, 4, 16, 1, 4
+    );
+    bufferC.write(&initial, sizeof(initial));
+    gemm(bufferA, bufferB, bufferC, gemmArgs).wait();
+    bufferC.read(&result, sizeof(result));
+    EXPECT_FLOAT_EQ(result, 0.0f);
+
+    soclblas::GemmOutPlaceNaiveTemplateFP32 gemmOutPlace(
+        ctx, relu, 1, 1, 32, 4, 2, 4, 16, 1, 4
+    );
+    bufferC.write(&initial, sizeof(initial));
+    bufferOut.write(&initial, sizeof(initial));
+    gemmOutPlace(
+        bufferA,
+        bufferB,
+        bufferC,
+        bufferOut,
+        soclblas::GemmOutPlaceArguments::sameOutputLayout(gemmArgs)
+    ).wait();
+    bufferOut.read(&result, sizeof(result));
+    EXPECT_FLOAT_EQ(result, 0.0f);
+
+    soclblas::MatMulNaiveTemplateFP32 matmul(
+        ctx, relu, 1, 1, 32, 4, 2, 4, 16, 1, 4
+    );
+    bufferOut.write(&initial, sizeof(initial));
+    matmul(bufferA, bufferB, bufferOut, matmulArgs).wait();
+    bufferOut.read(&result, sizeof(result));
+    EXPECT_FLOAT_EQ(result, 0.0f);
+
+    soclblas::GemvNaiveTemplateFP32 gemv(
+        ctx, relu, 1, 1, 32, 4, 2, 4, 16, 1, 4
+    );
+    bufferC.write(&initial, sizeof(initial));
+    gemv(bufferA, bufferB, bufferC, gemvArgs).wait();
+    bufferC.read(&result, sizeof(result));
+    EXPECT_FLOAT_EQ(result, 0.0f);
+
+    soclblas::GemvOutPlaceNaiveTemplateFP32 gemvOutPlace(
+        ctx, relu, 1, 1, 32, 4, 2, 4, 16, 1, 4
+    );
+    bufferC.write(&initial, sizeof(initial));
+    bufferOut.write(&initial, sizeof(initial));
+    gemvOutPlace(bufferA, bufferB, bufferC, bufferOut, gemvArgs).wait();
+    bufferOut.read(&result, sizeof(result));
+    EXPECT_FLOAT_EQ(result, 0.0f);
 }
