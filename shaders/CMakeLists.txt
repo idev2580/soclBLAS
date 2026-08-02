@@ -8,15 +8,10 @@ set(
     "${CMAKE_CURRENT_SOURCE_DIR}/AvgNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DotProductNaiveFP32.comp"
     # "${CMAKE_SOURCE_DIR}/shaders/GemvNaiveFP32.comp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/GemmContiguousNaiveFP32.comp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/GemmGreedyRegisterFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmNaiveFP32.comp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/GemmOutPlaceGreedyRegisterFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GemmOutPlaceNaiveFP32.comp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/GemmSharedFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MaxNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MinNaiveFP32.comp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/MatMulGreedyRegisterFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MatMulNaiveFP32.comp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SumNaiveFP32.comp"
 )
@@ -34,7 +29,7 @@ foreach(SHADER_PATH IN LISTS ALL_SHADER_SOURCES)
 
   string(REPLACE ".comp" "_SPIRV" VAR_NAME ${FILE_NAME})
 
-  set(SHADER_HEADER "${CMAKE_BINARY_DIR}/shaders/${VAR_NAME}")
+  set(SHADER_HEADER "${CMAKE_CURRENT_BINARY_DIR}/${VAR_NAME}")
 
   add_custom_command(
     OUTPUT ${SHADER_HEADER}
@@ -45,5 +40,5 @@ foreach(SHADER_PATH IN LISTS ALL_SHADER_SOURCES)
   list(APPEND SHADER_HEADERS ${SHADER_HEADER})
 endforeach()
 
-add_custom_target(compile_shaders ALL DEPENDS ${SHADER_HEADERS})
+add_custom_target(soclblas_compile_shaders ALL DEPENDS ${SHADER_HEADERS})
 set(SHADER_HEADERS ${SHADER_HEADERS} PARENT_SCOPE)

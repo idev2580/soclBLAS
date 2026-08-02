@@ -1,13 +1,31 @@
 #include <soclblas/ops/GemvNaive.hpp>
-#include <GemmNaiveFP32_SPIRV>
+#include <soclblas/ops/GemmNaive.hpp>
+#include <memory>
 
 namespace soclblas{
     GemvNaiveFP32::GemvNaiveFP32(
         socl::Context& ctx,
-        uint32_t tile_m,
-        uint32_t tile_n,
-        uint32_t tile_k
-    ):Gemv(
-        ctx, std::span<const uint32_t>(GemmNaiveFP32_SPIRV), tile_m, tile_n, tile_k
-    ){}
+        uint32_t subgroup_tile_m,
+        uint32_t subgroup_tile_n,
+        uint32_t subgroup_tile_p,
+        uint32_t subgroup_tile_cnt_m,
+        uint32_t subgroup_tile_cnt_p,
+        uint32_t shared_tile_n_multiplier,
+        uint32_t reg_tile_m,
+        uint32_t k_unroll,
+        uint32_t reg_tile_p
+    ):Gemv(ctx){
+        gemm = std::make_unique<GemmNaiveFP32>(
+            ctx,
+            subgroup_tile_m,
+            subgroup_tile_n,
+            subgroup_tile_p,
+            subgroup_tile_cnt_m,
+            subgroup_tile_cnt_p,
+            shared_tile_n_multiplier,
+            reg_tile_m,
+            k_unroll,
+            reg_tile_p
+        );
+    }
 }

@@ -7,6 +7,17 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 include(FetchContent)
 
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(SOCLBLAS_BUILD_TESTS_DEFAULT ON)
+else()
+    set(SOCLBLAS_BUILD_TESTS_DEFAULT OFF)
+endif()
+option(
+    SOCLBLAS_BUILD_TESTS
+    "Build soclBLAS tests and performance executables"
+    ${SOCLBLAS_BUILD_TESTS_DEFAULT}
+)
+
 FetchContent_Declare(
   socl
   GIT_REPOSITORY https://github.com/idev2580/socl.git
@@ -16,13 +27,15 @@ FetchContent_MakeAvailable(socl)
 
 add_subdirectory(shaders)
 add_subdirectory(src)
-add_subdirectory(tests)
+if(SOCLBLAS_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
 
 add_library(soclblas SHARED ${SOURCES})
 set_target_properties(soclblas PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
-add_dependencies(soclblas compile_shaders)
+add_dependencies(soclblas soclblas_compile_shaders)
 target_include_directories(soclblas
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"

@@ -1,6 +1,5 @@
 set(TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/NaiveTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/PerformanceShaderCorrectnessTest.cpp"
 )
 
 set(PERFORMANCE_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/PerformanceTest.cpp")

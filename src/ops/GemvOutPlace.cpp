@@ -3,15 +3,7 @@
 #include <soclblas/ops/GemmOutPlace.hpp>
 
 namespace soclblas{
-    GemvOutPlace::GemvOutPlace(
-        socl::Context& ctx,
-        std::span<const uint32_t> gemmShaderBytecodes,
-        uint32_t tile_m,
-        uint32_t tile_n,
-        uint32_t tile_p
-    ):gemm(
-        ctx, gemmShaderBytecodes, tile_m, tile_n, tile_p
-    ){}
+    GemvOutPlace::GemvOutPlace(socl::Context&):gemm(nullptr){}
     socl::DispatchToken GemvOutPlace::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
@@ -20,7 +12,13 @@ namespace soclblas{
         std::size_t argsSize
     ){
         GemmOutPlaceArguments m_args = convertGemvToGemm(*(GemvOutPlaceArguments*)args);
-        return gemm.execute(inputs, inouts, outputs, &m_args, sizeof(GemmOutPlaceArguments));
+        return gemm->execute(
+            inputs,
+            inouts,
+            outputs,
+            &m_args,
+            sizeof(GemmOutPlaceArguments)
+        );
     }
 
     socl::DispatchToken GemvOutPlace::operator()(
@@ -31,7 +29,7 @@ namespace soclblas{
         const GemvOutPlaceArguments& args
     ){
         GemmOutPlaceArguments m_args = convertGemvToGemm(args);
-        return gemm(A,B,C,outC,m_args);
+        return (*gemm)(A,B,C,outC,m_args);
     }
 
     socl::DispatchToken GemvOutPlace::operator()(

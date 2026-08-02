@@ -166,7 +166,7 @@ void run_matmul_test(const char* op_name){
             (int)tile.scope
         );
     }*/
-    MatMulOp matmul(ctx, 8, 4, 4);
+    MatMulOp matmul(ctx, 1, 1, 32, 4, 2, 4, 16, 1, 4);
     auto bufferA = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_n, socl::BufferType::Auto);
     auto bufferB = ctx.createBuffer(sizeof(float) * max_batch * max_n * max_p, socl::BufferType::Auto);
     auto bufferC = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_p, socl::BufferType::Auto);
@@ -269,7 +269,7 @@ void run_matmul_test(const char* op_name){
 TEST(GEMMTest, BasicAssertion){
     socl::Context ctx;
     ctx.printGpuInfo(std::cout);
-    soclblas::GemmNaiveFP32 gemm(ctx, 8, 4, 4);
+    soclblas::GemmNaiveFP32 gemm(ctx, 1, 1, 32, 4, 2, 4, 16, 1, 4);
     auto bufferA = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_n, socl::BufferType::Auto);
     auto bufferB = ctx.createBuffer(sizeof(float) * max_batch * max_n * max_p, socl::BufferType::Auto);
     auto bufferC = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_p, socl::BufferType::Auto);
@@ -364,7 +364,9 @@ TEST(GEMMTest, BasicAssertion){
 
 TEST(GemvNaiveTest, BasicAssertion){
     socl::Context ctx;
-    soclblas::GemvNaiveFP32 gemv(ctx, 8, 4, 4);
+    // For extremely small P case of GEMV, arguments should be manually modified.
+    // So, I modified the arguments by hand.
+    soclblas::GemvNaiveFP32 gemv(ctx, 16, 1, 2, 1, 2, 1, 16, 1, 4);
     auto bufferA = ctx.createBuffer(sizeof(float) * max_m * max_n, socl::BufferType::Auto);
     auto bufferX = ctx.createBuffer(sizeof(float) * max_batch * max_n, socl::BufferType::Auto);
     auto bufferY = ctx.createBuffer(sizeof(float) * max_batch * max_m, socl::BufferType::Auto);
@@ -434,7 +436,9 @@ TEST(GemvNaiveTest, BasicAssertion){
 
 TEST(GemmOutPlaceNaiveTest, BasicAssertion){
     socl::Context ctx;
-    soclblas::GemmOutPlaceNaiveFP32 gemm(ctx, 8, 4, 4);
+    soclblas::GemmOutPlaceNaiveFP32 gemm(
+        ctx, 1, 1, 32, 4, 2, 4, 16, 1, 4
+    );
     auto bufferA = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_n, socl::BufferType::Auto);
     auto bufferB = ctx.createBuffer(sizeof(float) * max_batch * max_n * max_p, socl::BufferType::Auto);
     auto bufferC = ctx.createBuffer(sizeof(float) * max_batch * max_m * max_p, socl::BufferType::Auto);
@@ -520,7 +524,9 @@ TEST(GemmOutPlaceNaiveTest, BasicAssertion){
 
 TEST(GemmOutPlaceNaiveTest, SupportsDistinctOutputStride){
     socl::Context ctx;
-    soclblas::GemmOutPlaceNaiveFP32 gemm(ctx, 8, 4, 4);
+    soclblas::GemmOutPlaceNaiveFP32 gemm(
+        ctx, 1, 1, 32, 4, 2, 4, 16, 1, 4
+    );
 
     const uint32_t batch = 2;
     const uint32_t m = 3;
@@ -608,7 +614,9 @@ TEST(GemmOutPlaceNaiveTest, SupportsDistinctOutputStride){
 
 TEST(GemvOutPlaceNaiveTest, BasicAssertion){
     socl::Context ctx;
-    soclblas::GemvOutPlaceNaiveFP32 gemv(ctx, 8, 4, 4);
+    soclblas::GemvOutPlaceNaiveFP32 gemv(
+        ctx, 1, 1, 32, 4, 2, 4, 16, 1, 4
+    );
     auto bufferA = ctx.createBuffer(sizeof(float) * max_m * max_n, socl::BufferType::Auto);
     auto bufferX = ctx.createBuffer(sizeof(float) * max_batch * max_n, socl::BufferType::Auto);
     auto bufferY = ctx.createBuffer(sizeof(float) * max_batch * max_m, socl::BufferType::Auto);
@@ -686,7 +694,9 @@ TEST(GemvOutPlaceNaiveTest, BasicAssertion){
 
 TEST(GemvOutPlaceNaiveTest, SupportsDistinctOutputStride){
     socl::Context ctx;
-    soclblas::GemvOutPlaceNaiveFP32 gemv(ctx, 8, 4, 4);
+    soclblas::GemvOutPlaceNaiveFP32 gemv(
+        ctx, 1, 1, 32, 4, 2, 4, 16, 1, 4
+    );
 
     const uint32_t batch = 3;
     const uint32_t m = 4;

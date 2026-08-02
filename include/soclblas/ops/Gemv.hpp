@@ -3,19 +3,15 @@
 #include "soclblas/ops/Gemm.hpp"
 #include <soclblas/ops/GemvArguments.hpp>
 #include <cstdint>
+#include <memory>
 
 namespace soclblas{
     class Gemv: public Operator{
-        private:
-        Gemm gemm;
+        protected:
+        std::unique_ptr<Gemm> gemm;
+        explicit Gemv(socl::Context& ctx);
+
         public:
-        Gemv(
-            socl::Context& ctx,
-            std::span<const uint32_t> gemmShaderBytecodes,
-            uint32_t tile_m = 8,
-            uint32_t tile_n = 4,
-            uint32_t tile_p = 4
-        );
         virtual socl::DispatchToken execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,

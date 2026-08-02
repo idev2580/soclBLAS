@@ -10,15 +10,10 @@
 #include <vector>
 
 #include <socl/Context.hpp>
-#include <soclblas/ops/GemmContiguousNaive.hpp>
-#include <soclblas/ops/GemmGreedyRegister.hpp>
 #include <soclblas/ops/GemmNaive.hpp>
-#include <soclblas/ops/GemmOutPlaceGreedyRegister.hpp>
 #include <soclblas/ops/GemmOutPlaceNaive.hpp>
-#include <soclblas/ops/GemmShared.hpp>
 /* Argument sweep targets
  *
- * build/socl_performance_test --cont batch M N P tile_m tile_n tile_p thread_tile_m thread_tile_p iterations
  * Current best (Naive, iGPU case): ./build/soclblas_performance_tests --naive 16 4096 4096 4096 4 4 8 2 4 1 8 8 8 20
 
  * Current best (Naive, dGPU case): ./build/soclblas_performance_tests --naive 16 4096 4096 4096 8 4 4 2 4 1 8 4 8 20
@@ -40,44 +35,15 @@
   - 64 acc per thread
   - Large output tile for P direction
   
- * Current best (GreedyRegister, iGPU(RDNA3) case): ./build/soclblas_performance_tests --greedy-register 4 4096 4096 4096 4 4 8 2 4 1 8 8 8 20 (5 TFLOPs on Radeon 760M, same as theoretical performance)
- * Current best (Shared Memory 32KiB limit) : 
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 16 256 8 8 2
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 16 256 16 4 20
- * Current best (Shared Memory 64KiB limit) : ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 16 256 8 8 20
- *
- * 1. Shared Memory
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 32 128 8 8 20
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 16 128 8 8 20
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 8 128 8 8 20
- *
- * 2. Tile reusage
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 8 8 20
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 128 8 8 20
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 32 64 8 8 20
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 128 32 128 8 8 20
- *
- * 3. Register occupancy
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 4 4 20
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 8 4 20
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 4 8 20
- * ./build/soclblas_performance_tests --cont 8 4096 1024 1024 64 32 64 8 8 20
- *
- * 4. Subgroup/shared-memory kernels
+ * Subgroup/shared-memory kernels
  * ./build/soclblas_performance_tests --naive 8 4096 1024 1024 8 4 4 2 2 2 8 8 8 20
  * ./build/soclblas_performance_tests --naive-oop 8 4096 1024 1024 8 4 4 2 2 2 8 8 8 20
- * ./build/soclblas_performance_tests --greedy-register 8 4096 1024 1024 8 4 4 2 2 2 8 8 8 20
- * ./build/soclblas_performance_tests --greedy-register-oop 8 4096 1024 1024 8 4 4 2 2 2 8 8 8 20
  */
 namespace {
     constexpr int gpu_idx = 0;
     enum class GemmPerfMode {
-        Shared,
-        Contiguous,
         Naive,
-        NaiveOutPlace,
-        GreedyRegister,
-        GreedyRegisterOutPlace
+        NaiveOutPlace
     };
 
     struct GemmPerfConfig {
@@ -99,7 +65,7 @@ namespace {
     };
 
     struct ParsedArgs {
-        GemmPerfMode mode = GemmPerfMode::Shared;
+        GemmPerfMode mode = GemmPerfMode::Naive;
         GemmPerfConfig config;
     };
 
@@ -119,21 +85,6 @@ namespace {
             throw std::out_of_range(std::string(name) + " must fit in uint32_t and be greater than zero");
         }
         return static_cast<uint32_t>(value);
-    }
-
-    GemmPerfConfig parse_config(int argc, char** argv, int first_config_arg) {
-        GemmPerfConfig config;
-        config.batch = parse_u32_arg(argc, argv, first_config_arg, config.batch, "batch");
-        config.m = parse_u32_arg(argc, argv, first_config_arg + 1, config.m, "m");
-        config.n = parse_u32_arg(argc, argv, first_config_arg + 2, config.n, "n");
-        config.p = parse_u32_arg(argc, argv, first_config_arg + 3, config.p, "p");
-        config.tile_m = parse_u32_arg(argc, argv, first_config_arg + 4, config.tile_m, "tile_m");
-        config.tile_n = parse_u32_arg(argc, argv, first_config_arg + 5, config.tile_n, "tile_n");
-        config.tile_p = parse_u32_arg(argc, argv, first_config_arg + 6, config.tile_p, "tile_p");
-        config.thread_tile_m = parse_u32_arg(argc, argv, first_config_arg + 7, config.thread_tile_m, "thread_tile_m");
-        config.thread_tile_p = parse_u32_arg(argc, argv, first_config_arg + 8, config.thread_tile_p, "thread_tile_p");
-        config.iterations = parse_u32_arg(argc, argv, first_config_arg + 9, config.iterations, "iterations");
-        return config;
     }
 
     GemmPerfConfig parse_subgroup_config(
@@ -186,7 +137,7 @@ namespace {
             argv,
             first_config_arg + 11,
             config.inner_tile_n,
-            "k_unroll_or_reg_tile_n"
+            "k_unroll"
         );
         config.thread_tile_p = parse_u32_arg(
             argc,
@@ -205,153 +156,69 @@ namespace {
         return config;
     }
 
-    bool is_naive_mode(GemmPerfMode mode) {
-        return
-            mode == GemmPerfMode::Naive ||
-            mode == GemmPerfMode::NaiveOutPlace;
-    }
-
-    bool is_greedy_register_mode(GemmPerfMode mode) {
-        return
-            mode == GemmPerfMode::GreedyRegister ||
-            mode == GemmPerfMode::GreedyRegisterOutPlace;
-    }
-
-    bool is_subgroup_mode(GemmPerfMode mode) {
-        return is_naive_mode(mode) || is_greedy_register_mode(mode);
-    }
-
     ParsedArgs parse_args(int argc, char** argv) {
         ParsedArgs parsed;
         int first_config_arg = 1;
 
         if(argc > 1) {
             const std::string mode_arg = argv[1];
-            if(mode_arg == "--cont" || mode_arg == "--contiguous") {
-                parsed.mode = GemmPerfMode::Contiguous;
-                first_config_arg = 2;
-            } else if(mode_arg == "--shared") {
-                parsed.mode = GemmPerfMode::Shared;
-                first_config_arg = 2;
-            } else if(mode_arg == "--naive") {
+            if(mode_arg == "--naive") {
                 parsed.mode = GemmPerfMode::Naive;
                 first_config_arg = 2;
             } else if(mode_arg == "--naive-oop") {
                 parsed.mode = GemmPerfMode::NaiveOutPlace;
                 first_config_arg = 2;
-            } else if(
-                mode_arg == "--greedy-register" ||
-                mode_arg == "--greedy"
-            ) {
-                parsed.mode = GemmPerfMode::GreedyRegister;
-                first_config_arg = 2;
-            } else if(
-                mode_arg == "--greedy-register-oop" ||
-                mode_arg == "--greedy-oop"
-            ) {
-                parsed.mode = GemmPerfMode::GreedyRegisterOutPlace;
-                first_config_arg = 2;
             }
         }
 
-        parsed.config =
-            is_subgroup_mode(parsed.mode)
-                ? parse_subgroup_config(argc, argv, first_config_arg)
-                : parse_config(argc, argv, first_config_arg);
+        parsed.config = parse_subgroup_config(argc, argv, first_config_arg);
         return parsed;
     }
 
-    void validate_tile_config(GemmPerfMode mode, const GemmPerfConfig& config) {
+    void validate_tile_config(const GemmPerfConfig& config) {
         const uint64_t thread_accum_count =
             uint64_t(config.thread_tile_m) * uint64_t(config.thread_tile_p);
 
-        if(is_subgroup_mode(mode)) {
-            const uint64_t subgroup_size =
-                uint64_t(config.tile_m) * uint64_t(config.tile_p);
-            if(subgroup_size != 32) {
-                throw std::out_of_range(
-                    "subgroup GEMM requires subgroup_tile_m * subgroup_tile_p == 32"
-                );
-            }
-            if(
-                is_greedy_register_mode(mode) &&
-                (
-                    config.inner_tile_n % config.tile_m != 0 ||
-                    config.inner_tile_n % config.tile_p != 0
-                )
-            ) {
-                throw std::out_of_range(
-                    "greedy-register GEMM reg_tile_n must be divisible by subgroup_tile_m and subgroup_tile_p"
-                );
-            }
-            if(thread_accum_count > 128) {
-                throw std::out_of_range(
-                    "subgroup GEMM register tile must contain at most 128 output elements"
-                );
-            }
-
-            const uint64_t workgroup_threads =
-                uint64_t(config.subgroup_tile_cnt_m) *
-                uint64_t(config.subgroup_tile_cnt_p) *
-                subgroup_size;
-            if(workgroup_threads > 256) {
-                throw std::out_of_range(
-                    "subgroup GEMM workgroup must contain at most 256 invocations"
-                );
-            }
-
-            const uint64_t shared_m =
-                uint64_t(config.subgroup_tile_cnt_m) *
-                uint64_t(config.tile_m) *
-                uint64_t(config.thread_tile_m);
-            const uint64_t shared_n =
-                uint64_t(config.shared_tile_n_multiplier) *
-                uint64_t(config.tile_n) *
-                uint64_t(config.inner_tile_n);
-            const uint64_t shared_p =
-                uint64_t(config.subgroup_tile_cnt_p) *
-                uint64_t(config.tile_p) *
-                uint64_t(config.thread_tile_p);
-            const uint64_t shared_bytes =
-                shared_n * (shared_m + shared_p) * sizeof(float);
-            if(shared_bytes > 64ull * 1024ull) {
-                throw std::out_of_range(
-                    "subgroup GEMM shared-memory tiles must use at most 64 KiB"
-                );
-            }
-            return;
+        const uint64_t subgroup_size =
+            uint64_t(config.tile_m) * uint64_t(config.tile_p);
+        if(subgroup_size != 32) {
+            throw std::out_of_range(
+                "subgroup GEMM requires subgroup_tile_m * subgroup_tile_p == 32"
+            );
         }
-
-        if(mode == GemmPerfMode::Shared) {
-            if(config.thread_tile_m > 8 || config.thread_tile_p > 8) {
-                throw std::out_of_range("shared GEMM thread tile dimensions must be less than or equal to 8");
-            }
-        } else if(thread_accum_count > 128) {
-            throw std::out_of_range("contiguous GEMM thread tile must contain at most 128 output elements");
-        }
-
-        if(config.tile_m % config.thread_tile_m != 0 || config.tile_p % config.thread_tile_p != 0) {
-            throw std::out_of_range("tile_m and tile_p must be divisible by thread tile sizes");
+        if(thread_accum_count > 128) {
+            throw std::out_of_range(
+                "subgroup GEMM register tile must contain at most 128 output elements"
+            );
         }
 
         const uint64_t workgroup_threads =
-            uint64_t(config.tile_m / config.thread_tile_m) *
-            uint64_t(config.tile_p / config.thread_tile_p);
+            uint64_t(config.subgroup_tile_cnt_m) *
+            uint64_t(config.subgroup_tile_cnt_p) *
+            subgroup_size;
         if(workgroup_threads > 256) {
-            throw std::out_of_range("(tile_m / thread_tile_m) * (tile_p / thread_tile_p) must be less than or equal to 256");
+            throw std::out_of_range(
+                "subgroup GEMM workgroup must contain at most 256 invocations"
+            );
         }
 
-        const uint64_t shared_elements =
-            uint64_t(config.tile_m) * uint64_t(config.tile_n) +
-            uint64_t(config.tile_n) * uint64_t(config.tile_p);
-        const uint64_t shared_bytes = shared_elements * sizeof(float);
-        const uint64_t max_shared_bytes =
-            mode == GemmPerfMode::Contiguous ? 64ull * 1024ull : 32ull * 1024ull;
-        if(shared_bytes > max_shared_bytes) {
+        const uint64_t shared_m =
+            uint64_t(config.subgroup_tile_cnt_m) *
+            uint64_t(config.tile_m) *
+            uint64_t(config.thread_tile_m);
+        const uint64_t shared_n =
+            uint64_t(config.shared_tile_n_multiplier) *
+            uint64_t(config.tile_n) *
+            uint64_t(config.inner_tile_n);
+        const uint64_t shared_p =
+            uint64_t(config.subgroup_tile_cnt_p) *
+            uint64_t(config.tile_p) *
+            uint64_t(config.thread_tile_p);
+        const uint64_t shared_bytes =
+            shared_n * (shared_m + shared_p) * sizeof(float);
+        if(shared_bytes > 64ull * 1024ull) {
             throw std::out_of_range(
-                mode == GemmPerfMode::Contiguous
-                    ? "contiguous GEMM shared memory tile must be less than or equal to 64 KiB"
-                    : "shared GEMM shared memory tile must be less than or equal to 32 KiB"
+                "subgroup GEMM shared-memory tiles must use at most 64 KiB"
             );
         }
     }
@@ -408,40 +275,20 @@ namespace {
         std::cout
             << "Usage:\n"
             << "  " << program_name
-            << " [--shared|--cont]"
-            << " [batch] [m] [n] [p]"
-            << " [tile_m] [tile_n] [tile_p]"
-            << " [thread_tile_m] [thread_tile_p] [iterations]\n"
-            << "  " << program_name
             << " [--naive|--naive-oop]"
             << " [batch] [m] [n] [p]"
             << " [subgroup_tile_m] [subgroup_tile_n] [subgroup_tile_p]"
             << " [subgroup_tile_cnt_m] [subgroup_tile_cnt_p]"
             << " [shared_tile_n_multiplier]"
-            << " [reg_tile_m] [k_unroll] [reg_tile_p] [iterations]\n"
-            << "  " << program_name
-            << " [--greedy-register|--greedy-register-oop]"
-            << " [batch] [m] [n] [p]"
-            << " [subgroup_tile_m] [subgroup_tile_n] [subgroup_tile_p]"
-            << " [subgroup_tile_cnt_m] [subgroup_tile_cnt_p]"
-            << " [shared_tile_n_multiplier]"
-            << " [reg_tile_m] [reg_tile_n] [reg_tile_p] [iterations]\n";
+            << " [reg_tile_m] [k_unroll] [reg_tile_p] [iterations]\n";
     }
 
     const char* mode_name(GemmPerfMode mode) {
         switch(mode) {
-            case GemmPerfMode::Shared:
-                return "shared";
-            case GemmPerfMode::Contiguous:
-                return "contiguous";
             case GemmPerfMode::Naive:
                 return "naive";
             case GemmPerfMode::NaiveOutPlace:
                 return "naive-oop";
-            case GemmPerfMode::GreedyRegister:
-                return "greedy-register";
-            case GemmPerfMode::GreedyRegisterOutPlace:
-                return "greedy-register-oop";
         }
         return "unknown";
     }
@@ -469,31 +316,17 @@ namespace {
             << ", n=" << config.n
             << ", p=" << config.p << "\n";
 
-        if(is_subgroup_mode(mode)) {
-            std::cout
-                << "  subgroup_tile_m=" << config.tile_m
-                << ", subgroup_tile_n=" << config.tile_n
-                << ", subgroup_tile_p=" << config.tile_p << "\n"
-                << "  subgroup_tile_cnt_m=" << config.subgroup_tile_cnt_m
-                << ", subgroup_tile_cnt_p=" << config.subgroup_tile_cnt_p
-                << ", shared_tile_n_multiplier="
-                << config.shared_tile_n_multiplier << "\n"
-                << "  reg_tile_m=" << config.thread_tile_m
-                << (
-                    is_greedy_register_mode(mode)
-                        ? ", reg_tile_n="
-                        : ", k_unroll="
-                )
-                << config.inner_tile_n
-                << ", reg_tile_p=" << config.thread_tile_p << "\n";
-        } else {
-            std::cout
-                << "  tile_m=" << config.tile_m
-                << ", tile_n=" << config.tile_n
-                << ", tile_p=" << config.tile_p << "\n"
-                << "  thread_tile_m=" << config.thread_tile_m
-                << ", thread_tile_p=" << config.thread_tile_p << "\n";
-        }
+        std::cout
+            << "  subgroup_tile_m=" << config.tile_m
+            << ", subgroup_tile_n=" << config.tile_n
+            << ", subgroup_tile_p=" << config.tile_p << "\n"
+            << "  subgroup_tile_cnt_m=" << config.subgroup_tile_cnt_m
+            << ", subgroup_tile_cnt_p=" << config.subgroup_tile_cnt_p
+            << ", shared_tile_n_multiplier="
+            << config.shared_tile_n_multiplier << "\n"
+            << "  reg_tile_m=" << config.thread_tile_m
+            << ", k_unroll=" << config.inner_tile_n
+            << ", reg_tile_p=" << config.thread_tile_p << "\n";
 
         std::cout
             << "  iterations=" << config.iterations
@@ -536,154 +369,11 @@ namespace {
         return std::chrono::duration<double>(end - start).count();
     }
 
-    void test_gemm(const GemmPerfConfig& config) {
-        const uint64_t a_elements = matrix_elements(config.batch, config.m, config.n);
-        const uint64_t b_elements = matrix_elements(config.batch, config.n, config.p);
-        const uint64_t c_elements = matrix_elements(config.batch, config.m, config.p);
-
-        const size_t a_bytes = checked_bytes(a_elements);
-        const size_t b_bytes = checked_bytes(b_elements);
-        const size_t c_bytes = checked_bytes(c_elements);
-        const size_t total_bytes = checked_total_bytes(a_bytes, b_bytes, c_bytes);
-        const uint32_t a_stride = checked_stride(config.m, config.n, "a_stride");
-        const uint32_t b_stride = checked_stride(config.n, config.p, "b_stride");
-        const uint32_t c_stride = checked_stride(config.m, config.p, "c_stride");
-
-        print_config(GemmPerfMode::Shared, config, total_bytes);
-
-        std::vector<float> a(static_cast<size_t>(a_elements));
-        std::vector<float> b(static_cast<size_t>(b_elements));
-        std::vector<float> c(static_cast<size_t>(c_elements), 0.0f);
-
-        socl::Context ctx({gpu_idx});
-        // ctx.printGpuInfo(std::cout);
-        soclblas::GemmSharedFP32 gemm(
-            ctx,
-            config.tile_m,
-            config.tile_n,
-            config.tile_p,
-            config.thread_tile_m,
-            config.thread_tile_p
-        );
-
-        auto bufferA = ctx.createBuffer(a_bytes, socl::BufferType::Auto);
-        auto bufferB = ctx.createBuffer(b_bytes, socl::BufferType::Auto);
-        auto bufferC = ctx.createBuffer(c_bytes, socl::BufferType::Auto);
-
-        bufferA.write(a.data(), a_bytes);
-        bufferB.write(b.data(), b_bytes);
-        bufferC.write(c.data(), c_bytes);
-
-        soclblas::GemmArguments args = {
-            .b = config.batch,
-            .m = config.m,
-            .n = config.n,
-            .p = config.p,
-            .alpha = 1.0f,
-            .beta = 0.0f,
-            .a_stride = a_stride,
-            .b_stride = b_stride,
-            .c_stride = c_stride,
-            .a_m_stride = config.n,
-            .a_n_stride = 1,
-            .b_n_stride = config.p,
-            .b_p_stride = 1,
-            .c_m_stride = config.p,
-            .c_p_stride = 1
-        };
-
-        std::vector<socl::DispatchToken> tokens;
-        tokens.reserve(config.iterations);
-
-        const auto start = std::chrono::steady_clock::now();
-        for(uint32_t i = 0; i < config.iterations; i++) {
-            tokens.emplace_back(gemm(bufferA, bufferB, bufferC, args));
-        }
-        for(socl::DispatchToken& token : tokens) {
-            token.wait();
-        }
-        const auto end = std::chrono::steady_clock::now();
-
-        print_result(config, std::chrono::duration<double>(end - start).count());
-    }
-
-    void test_cont_gemm(const GemmPerfConfig& config) {
-        const uint64_t a_elements = matrix_elements(config.batch, config.m, config.n);
-        const uint64_t b_elements = matrix_elements(config.batch, config.n, config.p);
-        const uint64_t c_elements = matrix_elements(config.batch, config.m, config.p);
-
-        const size_t a_bytes = checked_bytes(a_elements);
-        const size_t b_bytes = checked_bytes(b_elements);
-        const size_t c_bytes = checked_bytes(c_elements);
-        const size_t total_bytes = checked_total_bytes(a_bytes, b_bytes, c_bytes);
-        const uint32_t a_stride = checked_stride(config.m, config.n, "a_stride");
-        const uint32_t b_stride = checked_stride(config.n, config.p, "b_stride");
-        const uint32_t c_stride = checked_stride(config.m, config.p, "c_stride");
-
-        print_config(GemmPerfMode::Contiguous, config, total_bytes);
-
-        std::vector<float> a(static_cast<size_t>(a_elements));
-        std::vector<float> b(static_cast<size_t>(b_elements));
-        std::vector<float> c(static_cast<size_t>(c_elements), 0.0f);
-
-        socl::Context ctx({gpu_idx});
-        // ctx.printGpuInfo(std::cout);
-        soclblas::GemmContiguousNaiveFP32 gemm(
-            ctx,
-            config.tile_m,
-            config.tile_n,
-            config.tile_p,
-            config.thread_tile_m,
-            config.thread_tile_p
-        );
-
-        auto bufferA = ctx.createBuffer(a_bytes, socl::BufferType::Auto);
-        auto bufferB = ctx.createBuffer(b_bytes, socl::BufferType::Auto);
-        auto bufferC = ctx.createBuffer(c_bytes, socl::BufferType::Auto);
-
-        bufferA.write(a.data(), a_bytes);
-        bufferB.write(b.data(), b_bytes);
-        bufferC.write(c.data(), c_bytes);
-
-        soclblas::GemmContiguousArguments args = {
-            .b = config.batch,
-            .m = config.m,
-            .n = config.n,
-            .p = config.p,
-            .alpha = 1.0f,
-            .beta = 0.0f,
-            .a_stride = a_stride,
-            .b_stride = b_stride,
-            .c_stride = c_stride,
-            .a_major_stride = config.n,
-            .b_major_stride = config.p,
-            .c_major_stride = config.p,
-            .flags = 0
-        };
-
-        std::vector<socl::DispatchToken> tokens;
-        tokens.reserve(config.iterations);
-
-        const auto start = std::chrono::steady_clock::now();
-        for(uint32_t i = 0; i < config.iterations; i++) {
-            tokens.emplace_back(gemm(bufferA, bufferB, bufferC, args));
-        }
-        for(socl::DispatchToken& token : tokens) {
-            token.wait();
-        }
-        const auto end = std::chrono::steady_clock::now();
-
-        print_result(config, std::chrono::duration<double>(end - start).count());
-    }
-
     void test_subgroup_gemm(
         GemmPerfMode mode,
         const GemmPerfConfig& config
     ) {
-        const bool out_of_place =
-            mode == GemmPerfMode::NaiveOutPlace ||
-            mode == GemmPerfMode::GreedyRegisterOutPlace;
-        const bool greedy_register = is_greedy_register_mode(mode);
+        const bool out_of_place = mode == GemmPerfMode::NaiveOutPlace;
         const uint64_t a_elements =
             matrix_elements(config.batch, config.m, config.n);
         const uint64_t b_elements =
@@ -751,91 +441,47 @@ namespace {
             const soclblas::GemmOutPlaceArguments out_args =
                 soclblas::GemmOutPlaceArguments::sameOutputLayout(args);
 
-            if(greedy_register) {
-                soclblas::GemmOutPlaceGreedyRegisterFP32 gemm(
-                    ctx,
-                    config.tile_m,
-                    config.tile_n,
-                    config.tile_p,
-                    config.subgroup_tile_cnt_m,
-                    config.subgroup_tile_cnt_p,
-                    config.shared_tile_n_multiplier,
-                    config.thread_tile_m,
-                    config.inner_tile_n,
-                    config.thread_tile_p
+            soclblas::GemmOutPlaceNaiveFP32 gemm(
+                ctx,
+                config.tile_m,
+                config.tile_n,
+                config.tile_p,
+                config.subgroup_tile_cnt_m,
+                config.subgroup_tile_cnt_p,
+                config.shared_tile_n_multiplier,
+                config.thread_tile_m,
+                config.inner_tile_n,
+                config.thread_tile_p
+            );
+            const double seconds = measure_dispatches(config, [&]() {
+                return gemm(
+                    bufferA,
+                    bufferB,
+                    bufferC,
+                    bufferOutC,
+                    out_args
                 );
-                const double seconds = measure_dispatches(config, [&]() {
-                    return gemm(
-                        bufferA,
-                        bufferB,
-                        bufferC,
-                        bufferOutC,
-                        out_args
-                    );
-                });
-                print_result(config, seconds);
-            } else {
-                soclblas::GemmOutPlaceNaiveFP32 gemm(
-                    ctx,
-                    config.tile_m,
-                    config.tile_n,
-                    config.tile_p,
-                    config.subgroup_tile_cnt_m,
-                    config.subgroup_tile_cnt_p,
-                    config.shared_tile_n_multiplier,
-                    config.thread_tile_m,
-                    config.inner_tile_n,
-                    config.thread_tile_p
-                );
-                const double seconds = measure_dispatches(config, [&]() {
-                    return gemm(
-                        bufferA,
-                        bufferB,
-                        bufferC,
-                        bufferOutC,
-                        out_args
-                    );
-                });
-                print_result(config, seconds);
-            }
+            });
+            print_result(config, seconds);
             return;
         }
 
-        if(greedy_register) {
-            soclblas::GemmGreedyRegisterFP32 gemm(
-                ctx,
-                config.tile_m,
-                config.tile_n,
-                config.tile_p,
-                config.subgroup_tile_cnt_m,
-                config.subgroup_tile_cnt_p,
-                config.shared_tile_n_multiplier,
-                config.thread_tile_m,
-                config.inner_tile_n,
-                config.thread_tile_p
-            );
-            const double seconds = measure_dispatches(config, [&]() {
-                return gemm(bufferA, bufferB, bufferC, args);
-            });
-            print_result(config, seconds);
-        } else {
-            soclblas::GemmNaiveFP32 gemm(
-                ctx,
-                config.tile_m,
-                config.tile_n,
-                config.tile_p,
-                config.subgroup_tile_cnt_m,
-                config.subgroup_tile_cnt_p,
-                config.shared_tile_n_multiplier,
-                config.thread_tile_m,
-                config.inner_tile_n,
-                config.thread_tile_p
-            );
-            const double seconds = measure_dispatches(config, [&]() {
-                return gemm(bufferA, bufferB, bufferC, args);
-            });
-            print_result(config, seconds);
-        }
+        soclblas::GemmNaiveFP32 gemm(
+            ctx,
+            config.tile_m,
+            config.tile_n,
+            config.tile_p,
+            config.subgroup_tile_cnt_m,
+            config.subgroup_tile_cnt_p,
+            config.shared_tile_n_multiplier,
+            config.thread_tile_m,
+            config.inner_tile_n,
+            config.thread_tile_p
+        );
+        const double seconds = measure_dispatches(config, [&]() {
+            return gemm(bufferA, bufferB, bufferC, args);
+        });
+        print_result(config, seconds);
     }
 }
 
@@ -848,14 +494,8 @@ int main(int argc, char** argv) {
 
         const ParsedArgs parsed = parse_args(argc, argv);
         const GemmPerfConfig& config = parsed.config;
-        validate_tile_config(parsed.mode, config);
-        if(is_subgroup_mode(parsed.mode)) {
-            test_subgroup_gemm(parsed.mode, config);
-        } else if(parsed.mode == GemmPerfMode::Contiguous) {
-            test_cont_gemm(config);
-        } else {
-            test_gemm(config);
-        }
+        validate_tile_config(config);
+        test_subgroup_gemm(parsed.mode, config);
     } catch(const std::exception& e) {
         std::cerr << "Performance test failed: " << e.what() << "\n";
         print_usage(argv[0]);
