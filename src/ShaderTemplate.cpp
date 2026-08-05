@@ -6,12 +6,12 @@
 namespace soclblas::detail{
     std::vector<uint32_t> compileShaderTemplate(
         std::string_view shaderTemplate,
-        std::string_view epilogueSource,
-        std::string_view sourceName
+        std::string_view injectedSource,
+        std::string_view sourceName,
+        std::string_view marker
     ){
-        constexpr std::string_view marker = "/*__SOCLBLAS_EPILOGUE__*/";
-        if(epilogueSource.empty()){
-            throw std::invalid_argument("epilogue GLSL source must not be empty");
+        if(injectedSource.empty()){
+            throw std::invalid_argument("injected GLSL source must not be empty");
         }
 
         const std::size_t markerOffset = shaderTemplate.find(marker);
@@ -21,7 +21,7 @@ namespace soclblas::detail{
         }
 
         std::string source(shaderTemplate);
-        source.replace(markerOffset, marker.size(), epilogueSource);
+        source.replace(markerOffset, marker.size(), injectedSource);
         const socl::ShaderCompileOptions selected{
             .vulkanVersion = socl::VulkanVersion::Vulkan13,
             .spirvVersion = socl::SpirvVersion::Spirv16,

@@ -1,15 +1,15 @@
 #pragma once
 #include "socl/Buffer.hpp"
 #include "soclblas/ops/Operator.hpp"
-// TODO: For broadcasted operations, elementwise operators should also need to support strided operation.
+#include <cstdint>
 
 namespace soclblas{
     struct UnaryElementwiseArguments{
-
+        uint32_t size;
     };
 
     struct BinaryElementwiseArguments{
-        
+        uint32_t size;
     };
 
     class UnaryElementwise: public Operator{

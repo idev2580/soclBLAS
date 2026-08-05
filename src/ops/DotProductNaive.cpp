@@ -5,8 +5,9 @@
 namespace soclblas{
     DotProductNaiveFP32::DotProductNaiveFP32(
         socl::Context& ctx,
-        uint32_t thread_num
-    ):ctx(ctx), thread_num(thread_num){
+        uint32_t thread_num,
+        uint32_t values_per_thread
+    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = DotProductNaiveFP32_SPIRV,
             .bindings = {
@@ -17,6 +18,7 @@ namespace soclblas{
             .pushConstantSize = sizeof(BinaryReductionArguments),
             .specConstants = {
                 {0, socl::specConstant(std::uint32_t{thread_num})},
+                {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
         this->descSet = ctx.createDescriptorSet(pipeline);

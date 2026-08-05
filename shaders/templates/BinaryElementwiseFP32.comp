@@ -1,0 +1,29 @@
+#version 460
+
+layout(constant_id = 0) const uint thread_num = 64;
+layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
+    float a[];
+};
+
+layout(set = 0, binding = 1) readonly restrict buffer tensor_b {
+    float b[];
+};
+
+layout(set = 0, binding = 2) writeonly restrict buffer tensor_out {
+    float out_data[];
+};
+
+layout(push_constant) uniform constants {
+    uint size;
+} args;
+
+/*__SOCLBLAS_OPERATION__*/
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i < args.size) {
+        out_data[i] = operation(a[i], b[i]);
+    }
+}

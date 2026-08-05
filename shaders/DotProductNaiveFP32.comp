@@ -4,6 +4,7 @@
 #extension GL_KHR_shader_subgroup_arithmetic : require
 
 layout(constant_id = 0) const uint thread_num = 32;
+layout(constant_id = 1) const uint values_per_thread = 64;
 layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) readonly restrict buffer tensor_a {
@@ -47,9 +48,27 @@ void main() {
     const uint batch_id = gl_WorkGroupID.x;
     const uint local_id = gl_LocalInvocationID.x;
 
+    float register_values[values_per_thread];
+    for (uint register_id = 0u; register_id < values_per_thread; register_id++) {
+        register_values[register_id] = 0.0;
+    }
+
+    const uint tile_size = thread_num * values_per_thread;
+    for (uint tile_offset = 0u; tile_offset < args.n; tile_offset += tile_size) {
+        for (uint register_id = 0u; register_id < values_per_thread; register_id++) {
+            const uint i = tile_offset + register_id * thread_num + local_id;
+            if (i < args.n) {
+                register_values[register_id] = fma(
+                    a[get_a_idx(batch_id, i)],
+                    b[get_b_idx(batch_id, i)],
+                    register_values[register_id]);
+            }
+        }
+    }
+
     float acc = 0.0;
-    for (uint i = local_id; i < args.n; i += thread_num) {
-        acc = fma(a[get_a_idx(batch_id, i)], b[get_b_idx(batch_id, i)], acc);
+    for (uint register_id = 0u; register_id < values_per_thread; register_id++) {
+        acc += register_values[register_id];
     }
 
     const float subgroup_sum = subgroupAdd(acc);

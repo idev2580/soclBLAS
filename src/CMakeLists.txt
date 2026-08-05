@@ -3,6 +3,7 @@ set(SOURCES
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/Axpy.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/AxpyOutPlace.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/DotProductNaive.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/ops/ElementWiseTemplate.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/Gemm.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/GemmArguments.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/GemmNaive.cpp"

@@ -11,11 +11,13 @@ namespace soclblas{
         socl::ShaderPipeline pipeline;
         socl::DescriptorSet descSet;
         uint32_t thread_num;
+        uint32_t values_per_thread;
 
         public:
         DotProductNaiveFP32(
             socl::Context& ctx,
-            uint32_t thread_num = 32
+            uint32_t thread_num = 32,
+            uint32_t values_per_thread = 64
         );
 
         virtual socl::DispatchToken execute(

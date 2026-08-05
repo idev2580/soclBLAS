@@ -5,6 +5,7 @@
 #include <random>
 #include <soclblas/ops/AxpyOutPlace.hpp>
 #include <soclblas/ops/DotProductNaive.hpp>
+#include <soclblas/ops/ElementWiseTemplate.hpp>
 #include <soclblas/ops/GemmNaive.hpp>
 #include <soclblas/ops/GemmNaiveTemplate.hpp>
 #include <soclblas/ops/GemmOutPlaceNaive.hpp>
@@ -783,10 +784,10 @@ TEST(GemvOutPlaceNaiveTest, SupportsDistinctOutputStride){
 
 TEST(ReductionNaiveTest, ComputesDotProductWithBatchStrides){
     socl::Context ctx;
-    soclblas::DotProductNaiveFP32 dot(ctx);
+    soclblas::DotProductNaiveFP32 dot(ctx, 32, 2);
 
     constexpr uint32_t batch = 2;
-    constexpr uint32_t n = 5;
+    constexpr uint32_t n = 67;
     const uint32_t a_n_stride = 2;
     const uint32_t a_b_stride = n * a_n_stride + 3;
     const uint32_t b_n_stride = 3;
@@ -806,15 +807,6 @@ TEST(ReductionNaiveTest, ComputesDotProductWithBatchStrides){
     std::vector<float> out(out_size, sentinel);
     std::vector<float> expected_out(out_size, sentinel);
 
-    const float a_values[batch][n] = {
-        {1.0f, -2.0f, 3.5f, 4.0f, -1.0f},
-        {-3.0f, 7.0f, 2.0f, -5.0f, 9.0f}
-    };
-    const float b_values[batch][n] = {
-        {0.5f, 3.0f, -2.0f, 1.5f, 8.0f},
-        {2.0f, -1.0f, 4.0f, -3.0f, 0.25f}
-    };
-
     for(uint32_t batch_id=0; batch_id < batch; batch_id++){
         float acc = 0.0f;
         for(uint32_t i=0; i < n; i++){
@@ -822,9 +814,13 @@ TEST(ReductionNaiveTest, ComputesDotProductWithBatchStrides){
                 uint64_t(batch_id) * a_b_stride + uint64_t(i) * a_n_stride;
             const uint64_t b_idx =
                 uint64_t(batch_id) * b_b_stride + uint64_t(i) * b_n_stride;
-            a[a_idx] = a_values[batch_id][i];
-            b[b_idx] = b_values[batch_id][i];
-            acc += a_values[batch_id][i] * b_values[batch_id][i];
+            const float a_value =
+                float(int32_t(i % 11) - 5) * 0.25f + float(batch_id);
+            const float b_value =
+                float(int32_t(i % 7) - 3) * 0.5f - float(batch_id) * 0.25f;
+            a[a_idx] = a_value;
+            b[b_idx] = b_value;
+            acc += a_value * b_value;
         }
 
         const uint64_t out_idx = uint64_t(batch_id) * out_b_stride;
@@ -855,6 +851,80 @@ TEST(ReductionNaiveTest, ComputesDotProductWithBatchStrides){
     bufferOut.read(out.data(), sizeof(float) * out.size());
 
     EXPECT_TRUE(is_equal_tensor(out, expected_out));
+}
+
+TEST(ElementWiseTemplateTest, AppliesUnaryOperationOutOfPlace){
+    constexpr std::string_view squarePlusOne = R"(
+float operation(float x){
+    return fma(x, x, 1.0f);
+}
+)";
+    socl::Context ctx;
+    soclblas::UnaryElementwiseTemplateFP32 operation(ctx, squarePlusOne, 32);
+
+    constexpr uint32_t size = 67;
+    std::vector<float> input(size);
+    std::vector<float> output(size, -1.0f);
+    std::vector<float> expected(size);
+    for(uint32_t i=0; i < size; i++){
+        input[i] = float(int32_t(i) - 31) * 0.25f;
+        expected[i] = input[i] * input[i] + 1.0f;
+    }
+
+    auto bufferInput =
+        ctx.createBuffer(sizeof(float) * input.size(), socl::BufferType::Auto);
+    auto bufferOutput =
+        ctx.createBuffer(sizeof(float) * output.size(), socl::BufferType::Auto);
+    bufferInput.write(input.data(), sizeof(float) * input.size());
+    bufferOutput.write(output.data(), sizeof(float) * output.size());
+
+    operation(
+        bufferInput,
+        bufferOutput,
+        soclblas::UnaryElementwiseArguments{.size = size}
+    ).wait();
+    bufferOutput.read(output.data(), sizeof(float) * output.size());
+
+    EXPECT_TRUE(is_equal_tensor(output, expected));
+}
+
+TEST(ElementWiseTemplateTest, AppliesBinaryOperationOutOfPlace){
+    constexpr std::string_view multiplyAdd = R"(
+float operation(float x, float y){
+    return fma(x, y, x);
+}
+)";
+    socl::Context ctx;
+    soclblas::BinaryElementwiseTemplateFP32 operation(ctx, multiplyAdd, 32);
+
+    constexpr uint32_t size = 67;
+    std::vector<float> a(size);
+    std::vector<float> b(size);
+    std::vector<float> output(size, -1.0f);
+    std::vector<float> expected(size);
+    for(uint32_t i=0; i < size; i++){
+        a[i] = float(int32_t(i % 13) - 6) * 0.5f;
+        b[i] = float(int32_t(i % 9) - 4) * 0.25f;
+        expected[i] = a[i] * b[i] + a[i];
+    }
+
+    auto bufferA = ctx.createBuffer(sizeof(float) * a.size(), socl::BufferType::Auto);
+    auto bufferB = ctx.createBuffer(sizeof(float) * b.size(), socl::BufferType::Auto);
+    auto bufferOutput =
+        ctx.createBuffer(sizeof(float) * output.size(), socl::BufferType::Auto);
+    bufferA.write(a.data(), sizeof(float) * a.size());
+    bufferB.write(b.data(), sizeof(float) * b.size());
+    bufferOutput.write(output.data(), sizeof(float) * output.size());
+
+    operation(
+        bufferA,
+        bufferB,
+        bufferOutput,
+        soclblas::BinaryElementwiseArguments{.size = size}
+    ).wait();
+    bufferOutput.read(output.data(), sizeof(float) * output.size());
+
+    EXPECT_TRUE(is_equal_tensor(output, expected));
 }
 
 TEST(ReductionNaiveTest, ComputesSumAndAvgWithBatchStrides){
