@@ -1,6 +1,5 @@
 #pragma once
 #include "socl/Buffer.hpp"
-#include "socl/DescriptorSet.hpp"
 #include <cstdint>
 #include <socl/Context.hpp>
 #include <soclblas/ops/Axpy.hpp>
@@ -9,9 +8,7 @@
 namespace soclblas{
     class AxpyOutPlaceFP32: public Operator{
         private:
-        socl::Context& ctx;
         socl::ShaderPipeline pipeline;
-        socl::DescriptorSet descSet;
         uint32_t thread_num;
 
         public:
@@ -19,7 +16,7 @@ namespace soclblas{
             socl::Context& ctx,
             uint32_t thread_num = 64
         );
-        virtual socl::DispatchToken execute(
+        virtual DispatchPlan execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -27,13 +24,13 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer A,
             socl::Buffer B,
             socl::Buffer outB,
             const AxpyOutPlaceArguments& args
         );
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer A,
             socl::Buffer B,
             socl::Buffer outB,

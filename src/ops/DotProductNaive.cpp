@@ -7,7 +7,7 @@ namespace soclblas{
         socl::Context& ctx,
         uint32_t thread_num,
         uint32_t values_per_thread
-    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
+    ):thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = DotProductNaiveFP32_SPIRV,
             .bindings = {
@@ -21,33 +21,32 @@ namespace soclblas{
                 {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
-        this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    socl::DispatchToken DotProductNaiveFP32::execute(
+    DispatchPlan DotProductNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
         const void* args,
         std::size_t argsSize
     ){
-        this->descSet.bindBuffer(0, inputs[0]);
-        this->descSet.bindBuffer(1, inputs[1]);
-        this->descSet.bindBuffer(2, outputs[0]);
-        this->descSet.update();
-
-        ctx.begin();
-        ctx.use(pipeline);
-        ctx.bind(descSet);
-        ctx.push(args, argsSize);
-
-        const BinaryReductionArguments* reductionArgs =
-            (const BinaryReductionArguments*)args;
-        ctx.dispatch(reductionArgs->b, 1, 1);
-        return ctx.submitAsync();
+        const auto* reductionArgs =
+            static_cast<const BinaryReductionArguments*>(args);
+        return {
+            .pipeline = pipeline,
+            .bindings = {
+                {0, inputs[0], socl::BufferAccess::Read},
+                {1, inputs[1], socl::BufferAccess::Read},
+                {2, outputs[0], socl::BufferAccess::Write},
+            },
+            .pushConstants = copyPushConstants(args, argsSize),
+            .dispatchX = reductionArgs->b,
+            .dispatchY = 1,
+            .dispatchZ = 1,
+        };
     }
 
-    socl::DispatchToken DotProductNaiveFP32::operator()(
+    DispatchPlan DotProductNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer b,
         socl::Buffer out,

@@ -1,6 +1,5 @@
 #pragma once
 #include "socl/Buffer.hpp"
-#include "socl/DescriptorSet.hpp"
 #include <cstdint>
 #include <socl/Context.hpp>
 #include <soclblas/ops/Operator.hpp>
@@ -9,9 +8,7 @@
 namespace soclblas{
     class Gemm: public Operator{
         private:
-        socl::Context& ctx;
         socl::ShaderPipeline pipeline;
-        socl::DescriptorSet descSet;
 
         uint32_t tile_m;
         uint32_t tile_n;
@@ -36,7 +33,7 @@ namespace soclblas{
             uint32_t inner_tile_n,
             uint32_t reg_tile_p
         );
-        virtual socl::DispatchToken execute(
+        virtual DispatchPlan execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -44,7 +41,7 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer A,
             socl::Buffer B,
             socl::Buffer C,

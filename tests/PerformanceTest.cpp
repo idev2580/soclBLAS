@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <socl/Context.hpp>
+#include <soclblas/ExecutionPlan.hpp>
 #include <soclblas/ops/GemmNaive.hpp>
 #include <soclblas/ops/GemmOutPlaceNaive.hpp>
 /* Argument sweep targets
@@ -41,6 +42,7 @@
  */
 namespace {
     constexpr int gpu_idx = 0;
+    constexpr uint32_t warmup_iterations = 5;
     enum class GemmPerfMode {
         Naive,
         NaiveOutPlace
@@ -329,8 +331,9 @@ namespace {
             << ", reg_tile_p=" << config.thread_tile_p << "\n";
 
         std::cout
+            << "  warmup_iterations=" << warmup_iterations << "\n"
             << "  iterations=" << config.iterations
-            << " (async submit per iteration, wait after all submissions)\n"
+            << " (serial submit and wait per iteration)\n"
             << "  host/device buffer bytes=" << total_bytes
             << " (" << bytes_to_mib(total_bytes) << " MiB)\n";
     }
@@ -352,18 +355,20 @@ namespace {
 
     template<typename DispatchFunction>
     double measure_dispatches(
+        socl::Context& ctx,
         const GemmPerfConfig& config,
         DispatchFunction dispatch
     ) {
-        std::vector<socl::DispatchToken> tokens;
-        tokens.reserve(config.iterations);
+        soclblas::ExecutionPlan executionPlan;
+        executionPlan.append(dispatch());
+        
+        for(uint32_t i = 0; i < warmup_iterations; i++) {
+            executionPlan.execute(ctx).wait();
+        }
 
         const auto start = std::chrono::steady_clock::now();
         for(uint32_t i = 0; i < config.iterations; i++) {
-            tokens.emplace_back(dispatch());
-        }
-        for(socl::DispatchToken& token : tokens) {
-            token.wait();
+            executionPlan.execute(ctx).wait();
         }
         const auto end = std::chrono::steady_clock::now();
         return std::chrono::duration<double>(end - start).count();
@@ -453,7 +458,7 @@ namespace {
                 config.inner_tile_n,
                 config.thread_tile_p
             );
-            const double seconds = measure_dispatches(config, [&]() {
+            const double seconds = measure_dispatches(ctx, config, [&]() {
                 return gemm(
                     bufferA,
                     bufferB,
@@ -478,7 +483,7 @@ namespace {
             config.inner_tile_n,
             config.thread_tile_p
         );
-        const double seconds = measure_dispatches(config, [&]() {
+        const double seconds = measure_dispatches(ctx, config, [&]() {
             return gemm(bufferA, bufferB, bufferC, args);
         });
         print_result(config, seconds);

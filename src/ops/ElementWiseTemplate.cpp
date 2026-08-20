@@ -27,7 +27,7 @@ namespace soclblas{
         socl::Context& ctx,
         std::vector<uint32_t> spirv,
         uint32_t thread_num
-    ):ctx(ctx), thread_num(thread_num){
+    ):thread_num(thread_num){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = spirv,
             .bindings = {
@@ -39,35 +39,34 @@ namespace soclblas{
                 {0, socl::specConstant(std::uint32_t{thread_num})},
             }
         });
-        this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    socl::DispatchToken UnaryElementwiseTemplateFP32::execute(
+    DispatchPlan UnaryElementwiseTemplateFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
         const void* args,
         std::size_t argsSize
     ){
-        this->descSet.bindBuffer(0, inputs[0]);
-        this->descSet.bindBuffer(1, outputs[0]);
-        this->descSet.update();
-
-        ctx.begin();
-        ctx.use(pipeline);
-        ctx.bind(descSet);
-        ctx.push(args, argsSize);
-
-        const UnaryElementwiseArguments* elementwiseArgs =
-            (const UnaryElementwiseArguments*)args;
+        const auto* elementwiseArgs =
+            static_cast<const UnaryElementwiseArguments*>(args);
         const uint32_t groupCount =
             elementwiseArgs->size / thread_num +
             (elementwiseArgs->size % thread_num == 0 ? 0 : 1);
-        ctx.dispatch(groupCount, 1, 1);
-        return ctx.submitAsync();
+        return {
+            .pipeline = pipeline,
+            .bindings = {
+                {0, inputs[0], socl::BufferAccess::Read},
+                {1, outputs[0], socl::BufferAccess::Write},
+            },
+            .pushConstants = copyPushConstants(args, argsSize),
+            .dispatchX = groupCount,
+            .dispatchY = 1,
+            .dispatchZ = 1,
+        };
     }
 
-    socl::DispatchToken UnaryElementwiseTemplateFP32::operator()(
+    DispatchPlan UnaryElementwiseTemplateFP32::operator()(
         socl::Buffer a,
         socl::Buffer out,
         const UnaryElementwiseArguments& args
@@ -103,7 +102,7 @@ namespace soclblas{
         socl::Context& ctx,
         std::vector<uint32_t> spirv,
         uint32_t thread_num
-    ):ctx(ctx), thread_num(thread_num){
+    ):thread_num(thread_num){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = spirv,
             .bindings = {
@@ -116,36 +115,35 @@ namespace soclblas{
                 {0, socl::specConstant(std::uint32_t{thread_num})},
             }
         });
-        this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    socl::DispatchToken BinaryElementwiseTemplateFP32::execute(
+    DispatchPlan BinaryElementwiseTemplateFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
         const void* args,
         std::size_t argsSize
     ){
-        this->descSet.bindBuffer(0, inputs[0]);
-        this->descSet.bindBuffer(1, inputs[1]);
-        this->descSet.bindBuffer(2, outputs[0]);
-        this->descSet.update();
-
-        ctx.begin();
-        ctx.use(pipeline);
-        ctx.bind(descSet);
-        ctx.push(args, argsSize);
-
-        const BinaryElementwiseArguments* elementwiseArgs =
-            (const BinaryElementwiseArguments*)args;
+        const auto* elementwiseArgs =
+            static_cast<const BinaryElementwiseArguments*>(args);
         const uint32_t groupCount =
             elementwiseArgs->size / thread_num +
             (elementwiseArgs->size % thread_num == 0 ? 0 : 1);
-        ctx.dispatch(groupCount, 1, 1);
-        return ctx.submitAsync();
+        return {
+            .pipeline = pipeline,
+            .bindings = {
+                {0, inputs[0], socl::BufferAccess::Read},
+                {1, inputs[1], socl::BufferAccess::Read},
+                {2, outputs[0], socl::BufferAccess::Write},
+            },
+            .pushConstants = copyPushConstants(args, argsSize),
+            .dispatchX = groupCount,
+            .dispatchY = 1,
+            .dispatchZ = 1,
+        };
     }
 
-    socl::DispatchToken BinaryElementwiseTemplateFP32::operator()(
+    DispatchPlan BinaryElementwiseTemplateFP32::operator()(
         socl::Buffer a,
         socl::Buffer b,
         socl::Buffer out,

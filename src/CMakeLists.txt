@@ -1,5 +1,6 @@
 # Scan CPP files
 set(SOURCES 
+	"${CMAKE_CURRENT_SOURCE_DIR}/ExecutionPlan.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/Axpy.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/AxpyOutPlace.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ops/DotProductNaive.cpp"

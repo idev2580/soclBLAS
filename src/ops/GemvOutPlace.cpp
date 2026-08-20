@@ -4,7 +4,7 @@
 
 namespace soclblas{
     GemvOutPlace::GemvOutPlace(socl::Context&):gemm(nullptr){}
-    socl::DispatchToken GemvOutPlace::execute(
+    DispatchPlan GemvOutPlace::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -21,7 +21,7 @@ namespace soclblas{
         );
     }
 
-    socl::DispatchToken GemvOutPlace::operator()(
+    DispatchPlan GemvOutPlace::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
@@ -32,7 +32,7 @@ namespace soclblas{
         return (*gemm)(A,B,C,outC,m_args);
     }
 
-    socl::DispatchToken GemvOutPlace::operator()(
+    DispatchPlan GemvOutPlace::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,

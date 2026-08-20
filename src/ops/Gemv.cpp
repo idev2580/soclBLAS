@@ -4,7 +4,7 @@
 
 namespace soclblas{
     Gemv::Gemv(socl::Context&):gemm(nullptr){}
-    socl::DispatchToken Gemv::execute(
+    DispatchPlan Gemv::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
@@ -15,7 +15,7 @@ namespace soclblas{
         return gemm->execute(inputs, inouts, outputs, &m_args, sizeof(GemmArguments));
     }
 
-    socl::DispatchToken Gemv::operator()(
+    DispatchPlan Gemv::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,

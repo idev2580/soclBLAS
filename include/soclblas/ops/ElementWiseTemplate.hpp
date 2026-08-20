@@ -8,9 +8,7 @@
 namespace soclblas{
     class UnaryElementwiseTemplateFP32: public UnaryElementwise{
         private:
-        socl::Context& ctx;
         socl::ShaderPipeline pipeline;
-        socl::DescriptorSet descSet;
         uint32_t thread_num;
 
         UnaryElementwiseTemplateFP32(
@@ -26,7 +24,7 @@ namespace soclblas{
             uint32_t thread_num = 64
         );
 
-        virtual socl::DispatchToken execute(
+        virtual DispatchPlan execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -34,7 +32,7 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer a,
             socl::Buffer out,
             const UnaryElementwiseArguments& args
@@ -43,9 +41,7 @@ namespace soclblas{
 
     class BinaryElementwiseTemplateFP32: public BinaryElementwise{
         private:
-        socl::Context& ctx;
         socl::ShaderPipeline pipeline;
-        socl::DescriptorSet descSet;
         uint32_t thread_num;
 
         BinaryElementwiseTemplateFP32(
@@ -61,7 +57,7 @@ namespace soclblas{
             uint32_t thread_num = 64
         );
 
-        virtual socl::DispatchToken execute(
+        virtual DispatchPlan execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -69,7 +65,7 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer a,
             socl::Buffer b,
             socl::Buffer out,

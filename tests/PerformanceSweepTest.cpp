@@ -6,9 +6,11 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <socl/Context.hpp>
+#include <soclblas/ExecutionPlan.hpp>
 #include <soclblas/ops/GemmNaive.hpp>
 
 constexpr int GPU_IDX = 0;
@@ -18,6 +20,15 @@ constexpr int N = 4096;
 constexpr int P = 4096;
 constexpr double SELECTION_THRESHOLD_TFLOPS = 7.0;
 constexpr uint32_t DEEP_REPEAT_COUNT = 10;
+
+socl::DispatchToken execute_plan(
+    socl::Context& ctx,
+    soclblas::DispatchPlan plan
+){
+    soclblas::ExecutionPlan executionPlan;
+    executionPlan.append(std::move(plan));
+    return executionPlan.execute(ctx);
+}
 
 struct SweepConfig {
     uint32_t subgroup_tile_m;
@@ -303,11 +314,14 @@ int main() {
 
                 const auto start =
                     std::chrono::steady_clock::now();
-                auto token = gemm(
-                    bufferA,
-                    bufferB,
-                    bufferC,
-                    args
+                auto token = execute_plan(
+                    ctx,
+                    gemm(
+                        bufferA,
+                        bufferB,
+                        bufferC,
+                        args
+                    )
                 );
                 token.wait();
                 const auto end =
@@ -364,11 +378,14 @@ int main() {
                 repeat++) {
                 const auto start =
                     std::chrono::steady_clock::now();
-                auto token = gemm(
-                    bufferA,
-                    bufferB,
-                    bufferC,
-                    args
+                auto token = execute_plan(
+                    ctx,
+                    gemm(
+                        bufferA,
+                        bufferB,
+                        bufferC,
+                        args
+                    )
                 );
                 token.wait();
                 const auto end =

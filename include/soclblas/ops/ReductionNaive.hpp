@@ -1,15 +1,12 @@
 #pragma once
 #include "socl/Buffer.hpp"
 #include "socl/Context.hpp"
-#include "socl/DescriptorSet.hpp"
 #include <soclblas/ops/Reduction.hpp>
 
 namespace soclblas{
     class MaxNaiveFP32:public IndexedUnaryReduction{
         private:
-        socl::Context& ctx;
         socl::ShaderPipeline pipeline;
-        socl::DescriptorSet descSet;
         uint32_t thread_num;
         uint32_t values_per_thread;
 
@@ -20,7 +17,7 @@ namespace soclblas{
             uint32_t values_per_thread = 64
         );
 
-        virtual socl::DispatchToken execute(
+        virtual DispatchPlan execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -28,7 +25,7 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer a,
             socl::Buffer outValue,
             socl::Buffer outIndex,
@@ -37,9 +34,7 @@ namespace soclblas{
     };
     class MinNaiveFP32:public IndexedUnaryReduction{
         private:
-        socl::Context& ctx;
         socl::ShaderPipeline pipeline;
-        socl::DescriptorSet descSet;
         uint32_t thread_num;
         uint32_t values_per_thread;
 
@@ -50,7 +45,7 @@ namespace soclblas{
             uint32_t values_per_thread = 64
         );
 
-        virtual socl::DispatchToken execute(
+        virtual DispatchPlan execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -58,7 +53,7 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer a,
             socl::Buffer outValue,
             socl::Buffer outIndex,
@@ -67,9 +62,7 @@ namespace soclblas{
     };
     class AvgNaiveFP32:public UnaryReduction{
         private:
-        socl::Context& ctx;
         socl::ShaderPipeline pipeline;
-        socl::DescriptorSet descSet;
         uint32_t thread_num;
         uint32_t values_per_thread;
 
@@ -80,7 +73,7 @@ namespace soclblas{
             uint32_t values_per_thread = 64
         );
 
-        virtual socl::DispatchToken execute(
+        virtual DispatchPlan execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -88,7 +81,7 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer a,
             socl::Buffer out,
             const UnaryReductionArguments& args
@@ -96,9 +89,7 @@ namespace soclblas{
     };
     class SumNaiveFP32:public UnaryReduction{
         private:
-        socl::Context& ctx;
         socl::ShaderPipeline pipeline;
-        socl::DescriptorSet descSet;
         uint32_t thread_num;
         uint32_t values_per_thread;
 
@@ -109,7 +100,7 @@ namespace soclblas{
             uint32_t values_per_thread = 64
         );
 
-        virtual socl::DispatchToken execute(
+        virtual DispatchPlan execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -117,7 +108,7 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer a,
             socl::Buffer out,
             const UnaryReductionArguments& args

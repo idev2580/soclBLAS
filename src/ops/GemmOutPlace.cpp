@@ -15,7 +15,6 @@ namespace soclblas{
         uint32_t inner_tile_n,
         uint32_t reg_tile_p
     ):
-        ctx(ctx),
         tile_m(subgroup_tile_cnt_m * subgroup_tile_m * reg_tile_m),
         tile_n(shared_tile_n_multiplier * subgroup_tile_n * inner_tile_n),
         tile_p(subgroup_tile_cnt_p * subgroup_tile_p * reg_tile_p){
@@ -45,38 +44,37 @@ namespace soclblas{
                 {8, socl::specConstant(reg_tile_m)},
                 {9, socl::specConstant(inner_tile_n)},
                 {10, socl::specConstant(reg_tile_p)}
-            }
+            },
+            .requiredSubgroupSize = 32,
         });
-        this->descSet = ctx.createDescriptorSet(pipeline);
     }
-    socl::DispatchToken GemmOutPlace::execute(
+    DispatchPlan GemmOutPlace::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
         const void* args,
         std::size_t argsSize
     ){
-        // Implement the forward pass of GEMM operation
-        this->descSet.bindBuffer(0, inputs[0]);
-        this->descSet.bindBuffer(1, inputs[1]);
-        this->descSet.bindBuffer(2, inputs[2]);
-        this->descSet.bindBuffer(3, outputs[0]);
-        this->descSet.update();
-
-        ctx.begin();
-        ctx.use(pipeline);
-        ctx.bind(descSet);
-        ctx.push(args, argsSize);
-
-        GemmOutPlaceArguments* gemmArgs = (GemmOutPlaceArguments*)args;
+        const auto* gemmArgs = static_cast<const GemmOutPlaceArguments*>(args);
         const uint32_t tile_r_size = tile_m;
         const uint32_t tile_c_size = tile_p;
         const uint32_t tiled_m = (gemmArgs->m / tile_r_size) + (gemmArgs->m % tile_r_size != 0);
         const uint32_t tiled_p = (gemmArgs->p / tile_c_size) + (gemmArgs->p % tile_c_size != 0);
-        ctx.dispatch(gemmArgs->b, tiled_m, tiled_p);
-        return ctx.submitAsync();
+        return {
+            .pipeline = pipeline,
+            .bindings = {
+                {0, inputs[0], socl::BufferAccess::Read},
+                {1, inputs[1], socl::BufferAccess::Read},
+                {2, inputs[2], socl::BufferAccess::Read},
+                {3, outputs[0], socl::BufferAccess::Write},
+            },
+            .pushConstants = copyPushConstants(args, argsSize),
+            .dispatchX = gemmArgs->b,
+            .dispatchY = tiled_m,
+            .dispatchZ = tiled_p,
+        };
     }
-    socl::DispatchToken GemmOutPlace::operator()(
+    DispatchPlan GemmOutPlace::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,
@@ -89,7 +87,7 @@ namespace soclblas{
         return this->execute(inputs, inouts, outputs, &args, sizeof(GemmOutPlaceArguments));
     }
 
-    socl::DispatchToken GemmOutPlace::operator()(
+    DispatchPlan GemmOutPlace::operator()(
         socl::Buffer A,
         socl::Buffer B,
         socl::Buffer C,

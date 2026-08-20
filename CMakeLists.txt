@@ -21,7 +21,7 @@ option(
 FetchContent_Declare(
   socl
   GIT_REPOSITORY https://github.com/idev2580/socl.git
-  GIT_TAG        v0.0.9
+  GIT_TAG        v0.0.10
 )
 FetchContent_MakeAvailable(socl)
 

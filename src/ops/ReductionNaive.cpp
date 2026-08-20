@@ -10,7 +10,7 @@ namespace soclblas{
         socl::Context& ctx,
         uint32_t thread_num,
         uint32_t values_per_thread
-    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
+    ):thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = MaxNaiveFP32_SPIRV,
             .bindings = {
@@ -24,33 +24,32 @@ namespace soclblas{
                 {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
-        this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    socl::DispatchToken MaxNaiveFP32::execute(
+    DispatchPlan MaxNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
         const void* args,
         std::size_t argsSize
     ){
-        this->descSet.bindBuffer(0, inputs[0]);
-        this->descSet.bindBuffer(1, outputs[0]);
-        this->descSet.bindBuffer(2, outputs[1]);
-        this->descSet.update();
-
-        ctx.begin();
-        ctx.use(pipeline);
-        ctx.bind(descSet);
-        ctx.push(args, argsSize);
-
-        const IndexedUnaryReductionArguments* reductionArgs =
-            (const IndexedUnaryReductionArguments*)args;
-        ctx.dispatch(reductionArgs->b, 1, 1);
-        return ctx.submitAsync();
+        const auto* reductionArgs =
+            static_cast<const IndexedUnaryReductionArguments*>(args);
+        return {
+            .pipeline = pipeline,
+            .bindings = {
+                {0, inputs[0], socl::BufferAccess::Read},
+                {1, outputs[0], socl::BufferAccess::Write},
+                {2, outputs[1], socl::BufferAccess::Write},
+            },
+            .pushConstants = copyPushConstants(args, argsSize),
+            .dispatchX = reductionArgs->b,
+            .dispatchY = 1,
+            .dispatchZ = 1,
+        };
     }
 
-    socl::DispatchToken MaxNaiveFP32::operator()(
+    DispatchPlan MaxNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer outValue,
         socl::Buffer outIndex,
@@ -72,7 +71,7 @@ namespace soclblas{
         socl::Context& ctx,
         uint32_t thread_num,
         uint32_t values_per_thread
-    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
+    ):thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = MinNaiveFP32_SPIRV,
             .bindings = {
@@ -86,33 +85,32 @@ namespace soclblas{
                 {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
-        this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    socl::DispatchToken MinNaiveFP32::execute(
+    DispatchPlan MinNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
         const void* args,
         std::size_t argsSize
     ){
-        this->descSet.bindBuffer(0, inputs[0]);
-        this->descSet.bindBuffer(1, outputs[0]);
-        this->descSet.bindBuffer(2, outputs[1]);
-        this->descSet.update();
-
-        ctx.begin();
-        ctx.use(pipeline);
-        ctx.bind(descSet);
-        ctx.push(args, argsSize);
-
-        const IndexedUnaryReductionArguments* reductionArgs =
-            (const IndexedUnaryReductionArguments*)args;
-        ctx.dispatch(reductionArgs->b, 1, 1);
-        return ctx.submitAsync();
+        const auto* reductionArgs =
+            static_cast<const IndexedUnaryReductionArguments*>(args);
+        return {
+            .pipeline = pipeline,
+            .bindings = {
+                {0, inputs[0], socl::BufferAccess::Read},
+                {1, outputs[0], socl::BufferAccess::Write},
+                {2, outputs[1], socl::BufferAccess::Write},
+            },
+            .pushConstants = copyPushConstants(args, argsSize),
+            .dispatchX = reductionArgs->b,
+            .dispatchY = 1,
+            .dispatchZ = 1,
+        };
     }
 
-    socl::DispatchToken MinNaiveFP32::operator()(
+    DispatchPlan MinNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer outValue,
         socl::Buffer outIndex,
@@ -134,7 +132,7 @@ namespace soclblas{
         socl::Context& ctx,
         uint32_t thread_num,
         uint32_t values_per_thread
-    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
+    ):thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = AvgNaiveFP32_SPIRV,
             .bindings = {
@@ -147,32 +145,31 @@ namespace soclblas{
                 {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
-        this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    socl::DispatchToken AvgNaiveFP32::execute(
+    DispatchPlan AvgNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
         const void* args,
         std::size_t argsSize
     ){
-        this->descSet.bindBuffer(0, inputs[0]);
-        this->descSet.bindBuffer(1, outputs[0]);
-        this->descSet.update();
-
-        ctx.begin();
-        ctx.use(pipeline);
-        ctx.bind(descSet);
-        ctx.push(args, argsSize);
-
-        const UnaryReductionArguments* reductionArgs =
-            (const UnaryReductionArguments*)args;
-        ctx.dispatch(reductionArgs->b, 1, 1);
-        return ctx.submitAsync();
+        const auto* reductionArgs =
+            static_cast<const UnaryReductionArguments*>(args);
+        return {
+            .pipeline = pipeline,
+            .bindings = {
+                {0, inputs[0], socl::BufferAccess::Read},
+                {1, outputs[0], socl::BufferAccess::Write},
+            },
+            .pushConstants = copyPushConstants(args, argsSize),
+            .dispatchX = reductionArgs->b,
+            .dispatchY = 1,
+            .dispatchZ = 1,
+        };
     }
 
-    socl::DispatchToken AvgNaiveFP32::operator()(
+    DispatchPlan AvgNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer out,
         const UnaryReductionArguments& args
@@ -187,7 +184,7 @@ namespace soclblas{
         socl::Context& ctx,
         uint32_t thread_num,
         uint32_t values_per_thread
-    ):ctx(ctx), thread_num(thread_num), values_per_thread(values_per_thread){
+    ):thread_num(thread_num), values_per_thread(values_per_thread){
         this->pipeline = ctx.createShaderPipeline({
             .spirv = SumNaiveFP32_SPIRV,
             .bindings = {
@@ -200,32 +197,31 @@ namespace soclblas{
                 {1, socl::specConstant(std::uint32_t{values_per_thread})},
             }
         });
-        this->descSet = ctx.createDescriptorSet(pipeline);
     }
 
-    socl::DispatchToken SumNaiveFP32::execute(
+    DispatchPlan SumNaiveFP32::execute(
         std::span<socl::Buffer> inputs,
         std::span<socl::Buffer> inouts,
         std::span<socl::Buffer> outputs,
         const void* args,
         std::size_t argsSize
     ){
-        this->descSet.bindBuffer(0, inputs[0]);
-        this->descSet.bindBuffer(1, outputs[0]);
-        this->descSet.update();
-
-        ctx.begin();
-        ctx.use(pipeline);
-        ctx.bind(descSet);
-        ctx.push(args, argsSize);
-
-        const UnaryReductionArguments* reductionArgs =
-            (const UnaryReductionArguments*)args;
-        ctx.dispatch(reductionArgs->b, 1, 1);
-        return ctx.submitAsync();
+        const auto* reductionArgs =
+            static_cast<const UnaryReductionArguments*>(args);
+        return {
+            .pipeline = pipeline,
+            .bindings = {
+                {0, inputs[0], socl::BufferAccess::Read},
+                {1, outputs[0], socl::BufferAccess::Write},
+            },
+            .pushConstants = copyPushConstants(args, argsSize),
+            .dispatchX = reductionArgs->b,
+            .dispatchY = 1,
+            .dispatchZ = 1,
+        };
     }
 
-    socl::DispatchToken SumNaiveFP32::operator()(
+    DispatchPlan SumNaiveFP32::operator()(
         socl::Buffer a,
         socl::Buffer out,
         const UnaryReductionArguments& args

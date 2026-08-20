@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <random>
+#include <utility>
+#include <soclblas/ExecutionPlan.hpp>
 #include <soclblas/ops/AxpyOutPlace.hpp>
 #include <soclblas/ops/DotProductNaive.hpp>
 #include <soclblas/ops/ElementWiseTemplate.hpp>
@@ -25,6 +27,15 @@ constexpr int max_m = 1000;
 constexpr int max_n = 1000;
 constexpr int max_p = 1000;
 constexpr int matmul_test_iter = 10;
+
+socl::DispatchToken execute_plan(
+    socl::Context& ctx,
+    soclblas::DispatchPlan plan
+){
+    soclblas::ExecutionPlan executionPlan;
+    executionPlan.append(std::move(plan));
+    return executionPlan.execute(ctx);
+}
 
 bool is_equal_tensor(
     const std::vector<float>& y,
@@ -145,7 +156,7 @@ TEST(AxpyOutPlaceTest, SupportsBatchAndDistinctStrides){
         .out_b_n_stride = out_b_n_stride
     };
 
-    auto token = axpy(bufferA, bufferB, bufferOutB, args);
+    auto token = execute_plan(ctx, axpy(bufferA, bufferB, bufferOutB, args));
     token.wait();
     bufferB.read(b.data(), sizeof(float) * b.size());
     bufferOutB.read(out_b.data(), sizeof(float) * out_b.size());
@@ -253,7 +264,10 @@ void run_matmul_test(const char* op_name){
             .c_m_stride = is_c_trans ? 1 : p,
             .c_p_stride = is_c_trans ? m : 1
         };
-        auto token = matmul(bufferA, bufferB, bufferC, matmul_args);
+        auto token = execute_plan(
+            ctx,
+            matmul(bufferA, bufferB, bufferC, matmul_args)
+        );
         token.wait();
         bufferC.read(c.data(), sizeof(float) * batch * m * p);
 
@@ -355,7 +369,10 @@ TEST(GEMMTest, BasicAssertion){
             .c_m_stride = is_c_trans ? 1 : p,
             .c_p_stride = is_c_trans ? m : 1
         };
-        auto token = gemm(bufferA, bufferB, bufferC, gemm_args);
+        auto token = execute_plan(
+            ctx,
+            gemm(bufferA, bufferB, bufferC, gemm_args)
+        );
         token.wait();
         bufferC.read(c.data(), sizeof(float) * batch * m * p);
         // Test!
@@ -427,7 +444,10 @@ TEST(GemvNaiveTest, BasicAssertion){
         };
         run_cpu_gemv(gemv_args, a, x, cpu_y);
 
-        auto token = gemv(bufferA, bufferX, bufferY, gemv_args);
+        auto token = execute_plan(
+            ctx,
+            gemv(bufferA, bufferX, bufferY, gemv_args)
+        );
         token.wait();
         bufferY.read(y.data(), sizeof(float) * batch * m);
 
@@ -512,7 +532,10 @@ TEST(GemmOutPlaceNaiveTest, BasicAssertion){
             .c_m_stride = is_c_trans ? 1 : p,
             .c_p_stride = is_c_trans ? m : 1
         };
-        auto token = gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args);
+        auto token = execute_plan(
+            ctx,
+            gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args)
+        );
         token.wait();
         bufferOutC.read(out_c.data(), sizeof(float) * batch * m * p);
         bufferC.read(c.data(), sizeof(float) * batch * m * p);
@@ -609,7 +632,10 @@ TEST(GemmOutPlaceNaiveTest, SupportsDistinctOutputStride){
     gemm_args.out_c_m_stride = out_m_stride;
     gemm_args.out_c_p_stride = out_p_stride;
 
-    auto gemm_token = gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args);
+    auto gemm_token = execute_plan(
+        ctx,
+        gemm(bufferA, bufferB, bufferC, bufferOutC, gemm_args)
+    );
     gemm_token.wait();
     bufferOutC.read(out_c.data(), sizeof(float) * out_c.size());
     bufferC.read(c.data(), sizeof(float) * c.size());
@@ -682,7 +708,10 @@ TEST(GemvOutPlaceNaiveTest, BasicAssertion){
         };
         run_cpu_gemv(gemv_args, a, x, cpu_y);
 
-        auto token = gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_args);
+        auto token = execute_plan(
+            ctx,
+            gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_args)
+        );
         token.wait();
         bufferOutY.read(out_y.data(), sizeof(float) * batch * m);
         bufferY.read(y.data(), sizeof(float) * batch * m);
@@ -773,7 +802,10 @@ TEST(GemvOutPlaceNaiveTest, SupportsDistinctOutputStride){
     gemv_out_args.out_y_m_stride = out_y_m_stride;
     gemv_out_args.out_y_b_stride = out_y_b_stride;
 
-    auto gemv_token = gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_out_args);
+    auto gemv_token = execute_plan(
+        ctx,
+        gemv(bufferA, bufferX, bufferY, bufferOutY, gemv_out_args)
+    );
     gemv_token.wait();
     bufferOutY.read(out_y.data(), sizeof(float) * out_y.size());
     bufferY.read(y.data(), sizeof(float) * y.size());
@@ -846,7 +878,10 @@ TEST(ReductionNaiveTest, ComputesDotProductWithBatchStrides){
         .out_n_stride = out_n_stride
     };
 
-    auto dot_token = dot(bufferA, bufferB, bufferOut, args);
+    auto dot_token = execute_plan(
+        ctx,
+        dot(bufferA, bufferB, bufferOut, args)
+    );
     dot_token.wait();
     bufferOut.read(out.data(), sizeof(float) * out.size());
 
@@ -878,10 +913,13 @@ float operation(float x){
     bufferInput.write(input.data(), sizeof(float) * input.size());
     bufferOutput.write(output.data(), sizeof(float) * output.size());
 
-    operation(
-        bufferInput,
-        bufferOutput,
-        soclblas::UnaryElementwiseArguments{.size = size}
+    execute_plan(
+        ctx,
+        operation(
+            bufferInput,
+            bufferOutput,
+            soclblas::UnaryElementwiseArguments{.size = size}
+        )
     ).wait();
     bufferOutput.read(output.data(), sizeof(float) * output.size());
 
@@ -916,11 +954,14 @@ float operation(float x, float y){
     bufferB.write(b.data(), sizeof(float) * b.size());
     bufferOutput.write(output.data(), sizeof(float) * output.size());
 
-    operation(
-        bufferA,
-        bufferB,
-        bufferOutput,
-        soclblas::BinaryElementwiseArguments{.size = size}
+    execute_plan(
+        ctx,
+        operation(
+            bufferA,
+            bufferB,
+            bufferOutput,
+            soclblas::BinaryElementwiseArguments{.size = size}
+        )
     ).wait();
     bufferOutput.read(output.data(), sizeof(float) * output.size());
 
@@ -986,9 +1027,9 @@ TEST(ReductionNaiveTest, ComputesSumAndAvgWithBatchStrides){
         .out_n_stride = out_n_stride
     };
 
-    auto sum_token = sum(bufferA, bufferSumOut, args);
+    auto sum_token = execute_plan(ctx, sum(bufferA, bufferSumOut, args));
     sum_token.wait();
-    auto avg_token = avg(bufferA, bufferAvgOut, args);
+    auto avg_token = execute_plan(ctx, avg(bufferA, bufferAvgOut, args));
     avg_token.wait();
 
     bufferSumOut.read(sum_out.data(), sizeof(float) * sum_out.size());
@@ -1083,9 +1124,15 @@ TEST(ReductionNaiveTest, ComputesMaxAndMinValuesAndIndices){
         .out_index_n_stride = out_index_n_stride
     };
 
-    auto max_token = max(bufferA, bufferMaxValues, bufferMaxIndices, args);
+    auto max_token = execute_plan(
+        ctx,
+        max(bufferA, bufferMaxValues, bufferMaxIndices, args)
+    );
     max_token.wait();
-    auto min_token = min(bufferA, bufferMinValues, bufferMinIndices, args);
+    auto min_token = execute_plan(
+        ctx,
+        min(bufferA, bufferMinValues, bufferMinIndices, args)
+    );
     min_token.wait();
 
     bufferMaxValues.read(max_values.data(), sizeof(float) * max_values.size());
@@ -1149,7 +1196,7 @@ float epilogue(float value){
         ctx, relu, 1, 1, 32, 4, 2, 4, 16, 1, 4
     );
     bufferC.write(&initial, sizeof(initial));
-    gemm(bufferA, bufferB, bufferC, gemmArgs).wait();
+    execute_plan(ctx, gemm(bufferA, bufferB, bufferC, gemmArgs)).wait();
     bufferC.read(&result, sizeof(result));
     EXPECT_FLOAT_EQ(result, 0.0f);
 
@@ -1158,12 +1205,15 @@ float epilogue(float value){
     );
     bufferC.write(&initial, sizeof(initial));
     bufferOut.write(&initial, sizeof(initial));
-    gemmOutPlace(
-        bufferA,
-        bufferB,
-        bufferC,
-        bufferOut,
-        soclblas::GemmOutPlaceArguments::sameOutputLayout(gemmArgs)
+    execute_plan(
+        ctx,
+        gemmOutPlace(
+            bufferA,
+            bufferB,
+            bufferC,
+            bufferOut,
+            soclblas::GemmOutPlaceArguments::sameOutputLayout(gemmArgs)
+        )
     ).wait();
     bufferOut.read(&result, sizeof(result));
     EXPECT_FLOAT_EQ(result, 0.0f);
@@ -1172,7 +1222,7 @@ float epilogue(float value){
         ctx, relu, 1, 1, 32, 4, 2, 4, 16, 1, 4
     );
     bufferOut.write(&initial, sizeof(initial));
-    matmul(bufferA, bufferB, bufferOut, matmulArgs).wait();
+    execute_plan(ctx, matmul(bufferA, bufferB, bufferOut, matmulArgs)).wait();
     bufferOut.read(&result, sizeof(result));
     EXPECT_FLOAT_EQ(result, 0.0f);
 
@@ -1180,7 +1230,7 @@ float epilogue(float value){
         ctx, relu, 1, 1, 32, 4, 2, 4, 16, 1, 4
     );
     bufferC.write(&initial, sizeof(initial));
-    gemv(bufferA, bufferB, bufferC, gemvArgs).wait();
+    execute_plan(ctx, gemv(bufferA, bufferB, bufferC, gemvArgs)).wait();
     bufferC.read(&result, sizeof(result));
     EXPECT_FLOAT_EQ(result, 0.0f);
 
@@ -1189,7 +1239,10 @@ float epilogue(float value){
     );
     bufferC.write(&initial, sizeof(initial));
     bufferOut.write(&initial, sizeof(initial));
-    gemvOutPlace(bufferA, bufferB, bufferC, bufferOut, gemvArgs).wait();
+    execute_plan(
+        ctx,
+        gemvOutPlace(bufferA, bufferB, bufferC, bufferOut, gemvArgs)
+    ).wait();
     bufferOut.read(&result, sizeof(result));
     EXPECT_FLOAT_EQ(result, 0.0f);
 }

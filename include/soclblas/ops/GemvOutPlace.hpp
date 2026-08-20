@@ -12,7 +12,7 @@ namespace soclblas{
         explicit GemvOutPlace(socl::Context& ctx);
 
         public:
-        virtual socl::DispatchToken execute(
+        virtual DispatchPlan execute(
             std::span<socl::Buffer> inputs,
             std::span<socl::Buffer> inouts,
             std::span<socl::Buffer> outputs,
@@ -20,14 +20,14 @@ namespace soclblas{
             std::size_t argsSize
         ) override;
 
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer A,
             socl::Buffer X,
             socl::Buffer Y,
             socl::Buffer outY,
             const GemvOutPlaceArguments& args
         );
-        virtual socl::DispatchToken operator()(
+        virtual DispatchPlan operator()(
             socl::Buffer A,
             socl::Buffer X,
             socl::Buffer Y,
