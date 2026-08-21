@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
@@ -14,11 +15,11 @@
 #include <soclblas/ops/GemmNaive.hpp>
 
 constexpr int GPU_IDX = 0;
-constexpr uint32_t B = 16;
+constexpr uint32_t B = 2;
 constexpr int M = 4096;
-constexpr int N = 4096;
+constexpr int N = 1024;
 constexpr int P = 4096;
-constexpr double SELECTION_THRESHOLD_TFLOPS = 7.0;
+constexpr size_t DEEP_SELECTION_COUNT = 10;
 constexpr uint32_t DEEP_REPEAT_COUNT = 10;
 
 socl::DispatchToken execute_plan(
@@ -286,7 +287,7 @@ int main() {
         static_cast<double>(N) *
         static_cast<double>(P);
 
-    std::vector<SweepConfig> selected_configs;
+    std::vector<std::pair<SweepConfig, double>> scan_results;
 
     for(const SweepConfig& base_config : SWEEP_CONFIGS) {
         for(const auto& counts : SUBGROUP_TILE_COUNT_VALUES) {
@@ -335,9 +336,7 @@ int main() {
                 print_scan_result(config, tflops);
                 fflush(stdout);
 
-                if(tflops > SELECTION_THRESHOLD_TFLOPS) {
-                    selected_configs.push_back(config);
-                }
+                scan_results.emplace_back(config, tflops);
             } catch(const std::exception& error) {
                 print_failure(
                     config,
@@ -347,9 +346,20 @@ int main() {
         }
     }
 
+    std::stable_sort(
+        scan_results.begin(),
+        scan_results.end(),
+        [](const auto& lhs, const auto& rhs) {
+            return lhs.second > rhs.second;
+        }
+    );
+    if(scan_results.size() > DEEP_SELECTION_COUNT) {
+        scan_results.resize(DEEP_SELECTION_COUNT);
+    }
+
     printf(
         "Selected configurations: %llu\n",
-        static_cast<unsigned long long>(selected_configs.size())
+        static_cast<unsigned long long>(scan_results.size())
     );
     printf(
         "####################################################################################################\n"
@@ -358,7 +368,8 @@ int main() {
     );
     fflush(stdout);
 
-    for(const SweepConfig& config : selected_configs) {
+    for(const auto& scan_result : scan_results) {
+        const SweepConfig& config = scan_result.first;
         try {
             soclblas::GemmNaiveFP32 gemm(
                 ctx,
