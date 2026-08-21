@@ -367,10 +367,14 @@ namespace {
         }
 
         const auto start = std::chrono::steady_clock::now();
+        double gpuDurationSum = 0.0;
         for(uint32_t i = 0; i < config.iterations; i++) {
-            executionPlan.execute(ctx).wait();
+            auto duration = executionPlan.execute(ctx, true).waitAndGetGpuDuration();
+            gpuDurationSum += duration.count();
         }
+        gpuDurationSum /= 1000000000.0;
         const auto end = std::chrono::steady_clock::now();
+        printf("CPU: %lf, GPU: %lf, Ratio(CPU/GPU)=%lf\n", std::chrono::duration<double>(end - start).count(), gpuDurationSum, std::chrono::duration<double>(end - start).count() / gpuDurationSum);
         return std::chrono::duration<double>(end - start).count();
     }
 

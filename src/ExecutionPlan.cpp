@@ -98,8 +98,8 @@ namespace soclblas{
         }
     }
 
-    socl::DispatchToken ExecutionPlan::execute(socl::Context& ctx) const{
-        ctx.begin();
+    socl::DispatchToken ExecutionPlan::execute(socl::Context& ctx, bool recordGpuTimestamp) const{
+        recordGpuTimestamp? ctx.beginTimed(): ctx.begin();
         record(ctx);
         return ctx.submitAsync();
     }

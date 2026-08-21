@@ -42,6 +42,6 @@ namespace soclblas{
         public:
         void append(DispatchPlan plan);
         void record(socl::Context& ctx) const;
-        [[nodiscard]] socl::DispatchToken execute(socl::Context& ctx) const;
+        [[nodiscard]] socl::DispatchToken execute(socl::Context& ctx, bool recordGpuTimestamp = false) const;
     };
 }
