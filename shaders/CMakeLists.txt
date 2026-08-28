@@ -1,4 +1,9 @@
 # Scan generated shader files
+find_program(SOCLBLAS_GLSLANG_VALIDATOR NAMES glslangValidator)
+if(NOT SOCLBLAS_GLSLANG_VALIDATOR)
+  message(FATAL_ERROR "glslangValidator is required to build soclBLAS")
+endif()
+
 file(GLOB GEN_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/generated/*.comp")
 # Add manually coded shader files
 set(
@@ -32,10 +37,16 @@ foreach(SHADER_PATH IN LISTS ALL_SHADER_SOURCES)
   set(SHADER_HEADER "${CMAKE_CURRENT_BINARY_DIR}/${VAR_NAME}")
 
   add_custom_command(
-    OUTPUT ${SHADER_HEADER}
-    COMMAND glslangValidator --target-env vulkan1.4 ${SHADER_PATH} -x -o ${SHADER_HEADER} --vn ${VAR_NAME}
-    DEPENDS ${SHADER_PATH}
+    OUTPUT "${SHADER_HEADER}"
+    COMMAND "${SOCLBLAS_GLSLANG_VALIDATOR}"
+            --target-env vulkan1.4
+            "${SHADER_PATH}"
+            -x
+            -o "${SHADER_HEADER}"
+            --vn "${VAR_NAME}"
+    DEPENDS "${SHADER_PATH}"
     COMMENT "Generating header for: ${FILE_NAME}"
+    VERBATIM
   )
   list(APPEND SHADER_HEADERS ${SHADER_HEADER})
 endforeach()

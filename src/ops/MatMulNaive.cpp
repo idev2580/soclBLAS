@@ -1,4 +1,5 @@
 #include <soclblas/ops/MatMulNaive.hpp>
+#include <MatMulNaiveFP32_SPIRV>
 
 namespace soclblas{
     MatMulNaiveFP32::MatMulNaiveFP32(

@@ -1,29 +1,28 @@
 cmake_minimum_required(VERSION 3.14)
-project(soclblas)
+project(soclBLAS VERSION 0.1.0 LANGUAGES CXX)
+
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(
+        CMAKE_INSTALL_PREFIX
+        "/opt/socl"
+        CACHE PATH "soclBLAS installation prefix"
+        FORCE
+    )
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-include(FetchContent)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
-if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    set(SOCLBLAS_BUILD_TESTS_DEFAULT ON)
-else()
-    set(SOCLBLAS_BUILD_TESTS_DEFAULT OFF)
-endif()
 option(
     SOCLBLAS_BUILD_TESTS
     "Build soclBLAS tests and performance executables"
-    ${SOCLBLAS_BUILD_TESTS_DEFAULT}
+    OFF
 )
-
-FetchContent_Declare(
-  socl
-  GIT_REPOSITORY https://github.com/idev2580/socl.git
-  GIT_TAG        v0.0.11
-)
-FetchContent_MakeAvailable(socl)
+find_package(SOCL CONFIG REQUIRED HINTS "${CMAKE_INSTALL_PREFIX}")
 
 set(GEMM_NAIVE_TEMPLATE
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/templates/GemmNaiveFP32.comp"
@@ -75,18 +74,63 @@ add_library(
     ${SOURCES}
     "${EMBEDDED_SHADER_TEMPLATES_CPP}"
 )
+add_library(soclBLAS::soclblas ALIAS soclblas)
 set_target_properties(soclblas PROPERTIES
+    VERSION "${PROJECT_VERSION}"
+    SOVERSION "${PROJECT_VERSION_MAJOR}"
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 add_dependencies(soclblas soclblas_compile_shaders)
+target_compile_features(soclblas PUBLIC cxx_std_20)
 target_include_directories(soclblas
     PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_BINARY_DIR}/shaders"
 )
-target_link_libraries(soclblas PUBLIC socl)
+target_link_libraries(soclblas PUBLIC SOCL::socl)
+
+install(
+    TARGETS soclblas
+    EXPORT soclBLASTargets
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)
+install(
+    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/soclblas"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/soclBLAS"
+)
+install(
+    EXPORT soclBLASTargets
+    FILE soclBLASTargets.cmake
+    NAMESPACE soclBLAS::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/soclBLAS"
+)
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/soclBLASConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/soclBLASConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/soclBLAS"
+)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/soclBLASConfigVersion.cmake"
+    VERSION "${PROJECT_VERSION}"
+    COMPATIBILITY SameMajorVersion
+)
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/soclBLASConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/soclBLASConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/soclBLAS"
+)
 
 function(copy_target_runtime_dlls target_name)
     if(WIN32)
@@ -99,7 +143,10 @@ function(copy_target_runtime_dlls target_name)
     endif()
 endfunction()
 
-if(TEST_SOURCES)
+if(SOCLBLAS_BUILD_TESTS)
+    enable_testing()
+    include(FetchContent)
+
     if(MSVC)
         set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     endif()
@@ -115,15 +162,11 @@ if(TEST_SOURCES)
 
     include(GoogleTest)
     gtest_discover_tests(soclblas_tests)
-endif()
 
-if(PERFORMANCE_TEST_SOURCES)
     add_executable(soclblas_performance_tests ${PERFORMANCE_TEST_SOURCES})
     target_link_libraries(soclblas_performance_tests PRIVATE soclblas)
     copy_target_runtime_dlls(soclblas_performance_tests)
-endif()
 
-if(PERFORMANCE_SWEEP_TEST_SOURCES)
     add_executable(
         soclblas_performance_sweep_tests
         ${PERFORMANCE_SWEEP_TEST_SOURCES}

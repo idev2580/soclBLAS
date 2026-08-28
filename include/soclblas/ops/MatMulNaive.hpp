@@ -2,7 +2,6 @@
 #include "socl/Buffer.hpp"
 #include "socl/Context.hpp"
 #include <soclblas/ops/MatMul.hpp>
-#include <MatMulNaiveFP32_SPIRV>
 
 namespace soclblas{
     class MatMulNaiveFP32: public MatMul{
