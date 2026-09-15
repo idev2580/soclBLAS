@@ -54,7 +54,9 @@ namespace soclblas{
             for(const auto& binding : bindings){
                 allocated.descriptorSet.bindBuffer(
                     binding.binding,
-                    binding.buffer,
+                    binding.view.buffer,
+                    binding.view.offset,
+                    binding.view.size,
                     binding.access
                 );
             }

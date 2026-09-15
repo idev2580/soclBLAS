@@ -5,15 +5,15 @@
 #include <optional>
 #include <vector>
 
-#include <socl/Buffer.hpp>
 #include <socl/Context.hpp>
 #include <socl/DescriptorSet.hpp>
 #include <socl/ShaderPipeline.hpp>
+#include <soclblas/BufferView.hpp>
 
 namespace soclblas{
     struct BufferBinding{
         std::uint32_t binding;
-        socl::Buffer buffer;
+        BufferView view;
         socl::BufferAccess access;
     };
 

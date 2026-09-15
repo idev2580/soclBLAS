@@ -4,7 +4,7 @@
 #include <span>
 #include <vector>
 
-#include <socl/Buffer.hpp>
+#include <soclblas/BufferView.hpp>
 #include <soclblas/ExecutionPlan.hpp>
 
 namespace soclblas{
@@ -19,9 +19,9 @@ namespace soclblas{
         virtual ~Operator() = default;
 
         virtual DispatchPlan execute(
-            std::span<socl::Buffer> inputs,
-            std::span<socl::Buffer> inouts,
-            std::span<socl::Buffer> outputs,
+            std::span<const BufferView> inputs,
+            std::span<const BufferView> inouts,
+            std::span<const BufferView> outputs,
             const void* args,
             std::size_t argsSize
         ) = 0;

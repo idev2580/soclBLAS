@@ -49,9 +49,9 @@ namespace soclblas{
         });
     }
     DispatchPlan GemmOutPlace::execute(
-        std::span<socl::Buffer> inputs,
-        std::span<socl::Buffer> inouts,
-        std::span<socl::Buffer> outputs,
+        std::span<const BufferView> inputs,
+        std::span<const BufferView> inouts,
+        std::span<const BufferView> outputs,
         const void* args,
         std::size_t argsSize
     ){
@@ -75,23 +75,23 @@ namespace soclblas{
         };
     }
     DispatchPlan GemmOutPlace::operator()(
-        socl::Buffer A,
-        socl::Buffer B,
-        socl::Buffer C,
-        socl::Buffer outC,
+        BufferView A,
+        BufferView B,
+        BufferView C,
+        BufferView outC,
         const GemmOutPlaceArguments& args
     ){
-        std::vector<socl::Buffer> inputs = {A, B, C};
-        std::vector<socl::Buffer> inouts = {};
-        std::vector<socl::Buffer> outputs = {outC};
+        std::vector<BufferView> inputs = {A, B, C};
+        std::vector<BufferView> inouts = {};
+        std::vector<BufferView> outputs = {outC};
         return this->execute(inputs, inouts, outputs, &args, sizeof(GemmOutPlaceArguments));
     }
 
     DispatchPlan GemmOutPlace::operator()(
-        socl::Buffer A,
-        socl::Buffer B,
-        socl::Buffer C,
-        socl::Buffer outC,
+        BufferView A,
+        BufferView B,
+        BufferView C,
+        BufferView outC,
         const GemmArguments& args
     ){
         const GemmOutPlaceArguments outPlaceArgs = GemmOutPlaceArguments::sameOutputLayout(args);

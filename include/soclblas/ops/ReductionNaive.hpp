@@ -18,17 +18,17 @@ namespace soclblas{
         );
 
         virtual DispatchPlan execute(
-            std::span<socl::Buffer> inputs,
-            std::span<socl::Buffer> inouts,
-            std::span<socl::Buffer> outputs,
+            std::span<const BufferView> inputs,
+            std::span<const BufferView> inouts,
+            std::span<const BufferView> outputs,
             const void* args,
             std::size_t argsSize
         ) override;
 
         virtual DispatchPlan operator()(
-            socl::Buffer a,
-            socl::Buffer outValue,
-            socl::Buffer outIndex,
+            BufferView a,
+            BufferView outValue,
+            BufferView outIndex,
             const IndexedUnaryReductionArguments& args
         ) override;
     };
@@ -46,17 +46,17 @@ namespace soclblas{
         );
 
         virtual DispatchPlan execute(
-            std::span<socl::Buffer> inputs,
-            std::span<socl::Buffer> inouts,
-            std::span<socl::Buffer> outputs,
+            std::span<const BufferView> inputs,
+            std::span<const BufferView> inouts,
+            std::span<const BufferView> outputs,
             const void* args,
             std::size_t argsSize
         ) override;
 
         virtual DispatchPlan operator()(
-            socl::Buffer a,
-            socl::Buffer outValue,
-            socl::Buffer outIndex,
+            BufferView a,
+            BufferView outValue,
+            BufferView outIndex,
             const IndexedUnaryReductionArguments& args
         ) override;
     };
@@ -74,16 +74,16 @@ namespace soclblas{
         );
 
         virtual DispatchPlan execute(
-            std::span<socl::Buffer> inputs,
-            std::span<socl::Buffer> inouts,
-            std::span<socl::Buffer> outputs,
+            std::span<const BufferView> inputs,
+            std::span<const BufferView> inouts,
+            std::span<const BufferView> outputs,
             const void* args,
             std::size_t argsSize
         ) override;
 
         virtual DispatchPlan operator()(
-            socl::Buffer a,
-            socl::Buffer out,
+            BufferView a,
+            BufferView out,
             const UnaryReductionArguments& args
         ) override;
     };
@@ -101,16 +101,16 @@ namespace soclblas{
         );
 
         virtual DispatchPlan execute(
-            std::span<socl::Buffer> inputs,
-            std::span<socl::Buffer> inouts,
-            std::span<socl::Buffer> outputs,
+            std::span<const BufferView> inputs,
+            std::span<const BufferView> inouts,
+            std::span<const BufferView> outputs,
             const void* args,
             std::size_t argsSize
         ) override;
 
         virtual DispatchPlan operator()(
-            socl::Buffer a,
-            socl::Buffer out,
+            BufferView a,
+            BufferView out,
             const UnaryReductionArguments& args
         ) override;
     };

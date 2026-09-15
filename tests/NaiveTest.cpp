@@ -4,6 +4,7 @@
 #include <memory>
 #include <random>
 #include <utility>
+#include <soclblas/BufferView.hpp>
 #include <soclblas/ExecutionPlan.hpp>
 #include <soclblas/ops/AxpyOutPlace.hpp>
 #include <soclblas/ops/DotProductNaive.hpp>
@@ -163,6 +164,65 @@ TEST(AxpyOutPlaceTest, SupportsBatchAndDistinctStrides){
 
     EXPECT_TRUE(is_equal_tensor(out_b, expected_out_b));
     EXPECT_TRUE(is_equal_tensor(b, original_b));
+}
+
+TEST(BufferViewTest, AppliesNonZeroOffsetsToInputsAndOutput){
+    socl::Context ctx;
+    soclblas::AxpyOutPlaceFP32 axpy(ctx);
+
+    const std::vector<float> a = {1.0f, 2.0f, 3.0f, 4.0f};
+    const std::vector<float> b = {10.0f, 20.0f, 30.0f, 40.0f};
+    const std::vector<float> expected = {12.0f, 24.0f, 36.0f, 48.0f};
+    std::vector<float> output(expected.size(), -1.0f);
+
+    const std::size_t rangeSize = sizeof(float) * a.size();
+    const std::size_t requiredAlignment =
+        ctx.bufferOffsetAlignment(socl::DescriptorType::StorageBuffer);
+    const std::size_t alignment = requiredAlignment == 0 ? 1 : requiredAlignment;
+    const std::size_t rangeStride =
+        ((rangeSize + alignment - 1) / alignment) * alignment;
+    const std::size_t aOffset = rangeStride;
+    const std::size_t bOffset = rangeStride * 2;
+    const std::size_t outputOffset = rangeStride * 3;
+    const std::size_t workspaceSize = outputOffset + rangeSize;
+
+    auto workspace = ctx.createBuffer(workspaceSize, socl::BufferType::Auto);
+    workspace.write(a.data(), rangeSize, aOffset);
+    workspace.write(b.data(), rangeSize, bOffset);
+    workspace.write(output.data(), rangeSize, outputOffset);
+
+    const soclblas::AxpyOutPlaceArguments args = {
+        .b = 1,
+        .n = static_cast<uint32_t>(a.size()),
+        .alpha = 2.0f,
+        .a_b_stride = static_cast<uint32_t>(a.size()),
+        .a_n_stride = 1,
+        .b_b_stride = static_cast<uint32_t>(b.size()),
+        .b_n_stride = 1,
+        .out_b_b_stride = static_cast<uint32_t>(output.size()),
+        .out_b_n_stride = 1,
+    };
+
+    auto plan = axpy(
+        soclblas::BufferView{workspace, aOffset, rangeSize},
+        soclblas::BufferView{workspace, bOffset, rangeSize},
+        soclblas::BufferView{workspace, outputOffset, rangeSize},
+        args
+    );
+
+    ASSERT_EQ(plan.bindings.size(), 3);
+    EXPECT_EQ(plan.bindings[0].view.offset, aOffset);
+    EXPECT_EQ(plan.bindings[0].view.size, rangeSize);
+    EXPECT_EQ(plan.bindings[1].view.offset, bOffset);
+    EXPECT_EQ(plan.bindings[1].view.size, rangeSize);
+    EXPECT_EQ(plan.bindings[2].view.offset, outputOffset);
+    EXPECT_EQ(plan.bindings[2].view.size, rangeSize);
+
+    auto token = execute_plan(ctx, std::move(plan));
+    token.wait();
+    workspace.read(output.data(), rangeSize, outputOffset);
+
+    EXPECT_TRUE(is_equal_tensor(output, expected));
 }
 
 template<typename MatMulOp>

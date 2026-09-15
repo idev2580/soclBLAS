@@ -38,8 +38,8 @@ namespace soclblas{
     class UnaryReduction: public Operator{
         public:
         virtual DispatchPlan operator()(
-            socl::Buffer a,
-            socl::Buffer out,
+            BufferView a,
+            BufferView out,
             const UnaryReductionArguments& args
         ) = 0;
     };
@@ -47,9 +47,9 @@ namespace soclblas{
     class BinaryReduction: public Operator{
         public:
         virtual DispatchPlan operator()(
-            socl::Buffer a,
-            socl::Buffer b,
-            socl::Buffer out,
+            BufferView a,
+            BufferView b,
+            BufferView out,
             const BinaryReductionArguments& args
         ) = 0;
     };
@@ -57,9 +57,9 @@ namespace soclblas{
     class IndexedUnaryReduction: public Operator{
         public:
         virtual DispatchPlan operator()(
-            socl::Buffer a,
-            socl::Buffer outValue,
-            socl::Buffer outIndex,
+            BufferView a,
+            BufferView outValue,
+            BufferView outIndex,
             const IndexedUnaryReductionArguments& args
         ) = 0;
     };

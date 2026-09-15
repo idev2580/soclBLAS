@@ -24,9 +24,9 @@ namespace soclblas{
     }
 
     DispatchPlan DotProductNaiveFP32::execute(
-        std::span<socl::Buffer> inputs,
-        std::span<socl::Buffer> inouts,
-        std::span<socl::Buffer> outputs,
+        std::span<const BufferView> inputs,
+        std::span<const BufferView> inouts,
+        std::span<const BufferView> outputs,
         const void* args,
         std::size_t argsSize
     ){
@@ -47,14 +47,14 @@ namespace soclblas{
     }
 
     DispatchPlan DotProductNaiveFP32::operator()(
-        socl::Buffer a,
-        socl::Buffer b,
-        socl::Buffer out,
+        BufferView a,
+        BufferView b,
+        BufferView out,
         const BinaryReductionArguments& args
     ){
-        std::vector<socl::Buffer> inputs = {a, b};
-        std::vector<socl::Buffer> inouts = {};
-        std::vector<socl::Buffer> outputs = {out};
+        std::vector<BufferView> inputs = {a, b};
+        std::vector<BufferView> inouts = {};
+        std::vector<BufferView> outputs = {out};
         return this->execute(inputs, inouts, outputs, &args, sizeof(BinaryReductionArguments));
     }
 }

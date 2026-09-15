@@ -27,9 +27,9 @@ namespace soclblas{
     }
 
     DispatchPlan MaxNaiveFP32::execute(
-        std::span<socl::Buffer> inputs,
-        std::span<socl::Buffer> inouts,
-        std::span<socl::Buffer> outputs,
+        std::span<const BufferView> inputs,
+        std::span<const BufferView> inouts,
+        std::span<const BufferView> outputs,
         const void* args,
         std::size_t argsSize
     ){
@@ -50,14 +50,14 @@ namespace soclblas{
     }
 
     DispatchPlan MaxNaiveFP32::operator()(
-        socl::Buffer a,
-        socl::Buffer outValue,
-        socl::Buffer outIndex,
+        BufferView a,
+        BufferView outValue,
+        BufferView outIndex,
         const IndexedUnaryReductionArguments& args
     ){
-        std::vector<socl::Buffer> inputs = {a};
-        std::vector<socl::Buffer> inouts = {};
-        std::vector<socl::Buffer> outputs = {outValue, outIndex};
+        std::vector<BufferView> inputs = {a};
+        std::vector<BufferView> inouts = {};
+        std::vector<BufferView> outputs = {outValue, outIndex};
         return this->execute(
             inputs,
             inouts,
@@ -88,9 +88,9 @@ namespace soclblas{
     }
 
     DispatchPlan MinNaiveFP32::execute(
-        std::span<socl::Buffer> inputs,
-        std::span<socl::Buffer> inouts,
-        std::span<socl::Buffer> outputs,
+        std::span<const BufferView> inputs,
+        std::span<const BufferView> inouts,
+        std::span<const BufferView> outputs,
         const void* args,
         std::size_t argsSize
     ){
@@ -111,14 +111,14 @@ namespace soclblas{
     }
 
     DispatchPlan MinNaiveFP32::operator()(
-        socl::Buffer a,
-        socl::Buffer outValue,
-        socl::Buffer outIndex,
+        BufferView a,
+        BufferView outValue,
+        BufferView outIndex,
         const IndexedUnaryReductionArguments& args
     ){
-        std::vector<socl::Buffer> inputs = {a};
-        std::vector<socl::Buffer> inouts = {};
-        std::vector<socl::Buffer> outputs = {outValue, outIndex};
+        std::vector<BufferView> inputs = {a};
+        std::vector<BufferView> inouts = {};
+        std::vector<BufferView> outputs = {outValue, outIndex};
         return this->execute(
             inputs,
             inouts,
@@ -148,9 +148,9 @@ namespace soclblas{
     }
 
     DispatchPlan AvgNaiveFP32::execute(
-        std::span<socl::Buffer> inputs,
-        std::span<socl::Buffer> inouts,
-        std::span<socl::Buffer> outputs,
+        std::span<const BufferView> inputs,
+        std::span<const BufferView> inouts,
+        std::span<const BufferView> outputs,
         const void* args,
         std::size_t argsSize
     ){
@@ -170,13 +170,13 @@ namespace soclblas{
     }
 
     DispatchPlan AvgNaiveFP32::operator()(
-        socl::Buffer a,
-        socl::Buffer out,
+        BufferView a,
+        BufferView out,
         const UnaryReductionArguments& args
     ){
-        std::vector<socl::Buffer> inputs = {a};
-        std::vector<socl::Buffer> inouts = {};
-        std::vector<socl::Buffer> outputs = {out};
+        std::vector<BufferView> inputs = {a};
+        std::vector<BufferView> inouts = {};
+        std::vector<BufferView> outputs = {out};
         return this->execute(inputs, inouts, outputs, &args, sizeof(UnaryReductionArguments));
     }
 
@@ -200,9 +200,9 @@ namespace soclblas{
     }
 
     DispatchPlan SumNaiveFP32::execute(
-        std::span<socl::Buffer> inputs,
-        std::span<socl::Buffer> inouts,
-        std::span<socl::Buffer> outputs,
+        std::span<const BufferView> inputs,
+        std::span<const BufferView> inouts,
+        std::span<const BufferView> outputs,
         const void* args,
         std::size_t argsSize
     ){
@@ -222,13 +222,13 @@ namespace soclblas{
     }
 
     DispatchPlan SumNaiveFP32::operator()(
-        socl::Buffer a,
-        socl::Buffer out,
+        BufferView a,
+        BufferView out,
         const UnaryReductionArguments& args
     ){
-        std::vector<socl::Buffer> inputs = {a};
-        std::vector<socl::Buffer> inouts = {};
-        std::vector<socl::Buffer> outputs = {out};
+        std::vector<BufferView> inputs = {a};
+        std::vector<BufferView> inouts = {};
+        std::vector<BufferView> outputs = {out};
         return this->execute(inputs, inouts, outputs, &args, sizeof(UnaryReductionArguments));
     }
 }

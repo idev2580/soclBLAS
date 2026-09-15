@@ -15,17 +15,17 @@ namespace soclblas{
     class UnaryElementwise: public Operator{
         public:
         virtual DispatchPlan operator()(
-            socl::Buffer a,
-            socl::Buffer out,
+            BufferView a,
+            BufferView out,
             const UnaryElementwiseArguments& args
         ) = 0;
     };
     class BinaryElementwise: public Operator{
         public:
         virtual DispatchPlan operator()(
-            socl::Buffer a,
-            socl::Buffer b,
-            socl::Buffer out,
+            BufferView a,
+            BufferView b,
+            BufferView out,
             const BinaryElementwiseArguments& args
         ) = 0;
     };

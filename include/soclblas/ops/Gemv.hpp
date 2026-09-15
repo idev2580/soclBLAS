@@ -13,17 +13,17 @@ namespace soclblas{
 
         public:
         virtual DispatchPlan execute(
-            std::span<socl::Buffer> inputs,
-            std::span<socl::Buffer> inouts,
-            std::span<socl::Buffer> outputs,
+            std::span<const BufferView> inputs,
+            std::span<const BufferView> inouts,
+            std::span<const BufferView> outputs,
             const void* args,
             std::size_t argsSize
         ) override;
 
         virtual DispatchPlan operator()(
-            socl::Buffer A,
-            socl::Buffer X,
-            socl::Buffer Y,
+            BufferView A,
+            BufferView X,
+            BufferView Y,
             const GemvArguments& args
         );
     };

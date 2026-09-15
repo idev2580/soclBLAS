@@ -5,9 +5,9 @@
 namespace soclblas{
     Gemv::Gemv(socl::Context&):gemm(nullptr){}
     DispatchPlan Gemv::execute(
-        std::span<socl::Buffer> inputs,
-        std::span<socl::Buffer> inouts,
-        std::span<socl::Buffer> outputs,
+        std::span<const BufferView> inputs,
+        std::span<const BufferView> inouts,
+        std::span<const BufferView> outputs,
         const void* args,
         std::size_t argsSize
     ){
@@ -16,9 +16,9 @@ namespace soclblas{
     }
 
     DispatchPlan Gemv::operator()(
-        socl::Buffer A,
-        socl::Buffer B,
-        socl::Buffer C,
+        BufferView A,
+        BufferView B,
+        BufferView C,
         const GemvArguments& args
     ){
         GemmArguments m_args = convertGemvToGemm(args);

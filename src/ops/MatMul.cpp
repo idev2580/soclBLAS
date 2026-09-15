@@ -48,9 +48,9 @@ namespace soclblas{
         });
     }
     DispatchPlan MatMul::execute(
-        std::span<socl::Buffer> inputs,
-        std::span<socl::Buffer> inouts,
-        std::span<socl::Buffer> outputs,
+        std::span<const BufferView> inputs,
+        std::span<const BufferView> inouts,
+        std::span<const BufferView> outputs,
         const void* args,
         std::size_t argsSize
     ){
@@ -73,14 +73,14 @@ namespace soclblas{
         };
     }
     DispatchPlan MatMul::operator()(
-        socl::Buffer A,
-        socl::Buffer B,
-        socl::Buffer C,
+        BufferView A,
+        BufferView B,
+        BufferView C,
         const MatMulArguments& args
     ){
-        std::vector<socl::Buffer> inputs = {A, B};
-        std::vector<socl::Buffer> inouts = {};
-        std::vector<socl::Buffer> outputs = {C};
+        std::vector<BufferView> inputs = {A, B};
+        std::vector<BufferView> inouts = {};
+        std::vector<BufferView> outputs = {C};
         return this->execute(inputs, inouts, outputs, &args, sizeof(MatMulArguments));
     }
 }

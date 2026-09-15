@@ -40,9 +40,9 @@ namespace soclblas{
     }
 
     DispatchPlan AxpyOutPlaceFP32::execute(
-        std::span<socl::Buffer> inputs,
-        std::span<socl::Buffer> inouts,
-        std::span<socl::Buffer> outputs,
+        std::span<const BufferView> inputs,
+        std::span<const BufferView> inouts,
+        std::span<const BufferView> outputs,
         const void* args,
         std::size_t argsSize
     ){
@@ -64,21 +64,21 @@ namespace soclblas{
     }
 
     DispatchPlan AxpyOutPlaceFP32::operator()(
-        socl::Buffer A,
-        socl::Buffer B,
-        socl::Buffer outB,
+        BufferView A,
+        BufferView B,
+        BufferView outB,
         const AxpyOutPlaceArguments& args
     ){
-        std::vector<socl::Buffer> inputs = {A, B};
-        std::vector<socl::Buffer> inouts = {};
-        std::vector<socl::Buffer> outputs = {outB};
+        std::vector<BufferView> inputs = {A, B};
+        std::vector<BufferView> inouts = {};
+        std::vector<BufferView> outputs = {outB};
         return this->execute(inputs, inouts, outputs, &args, sizeof(AxpyOutPlaceArguments));
     }
 
     DispatchPlan AxpyOutPlaceFP32::operator()(
-        socl::Buffer A,
-        socl::Buffer B,
-        socl::Buffer outB,
+        BufferView A,
+        BufferView B,
+        BufferView outB,
         const AxpyArguments& args
     ){
         const AxpyOutPlaceArguments outPlaceArgs =
